@@ -214,13 +214,13 @@
 const store = {
   async get(k) {
     try {
-      if (window.storage) { const r = await window.storage.get(k); return r ? r.value : null; }
+      if (window.storage) { return window.storage.get(k); }
       return localStorage.getItem(k);
     } catch { return localStorage.getItem(k); }
   },
   async set(k, v) {
     try {
-      if (window.storage) { await window.storage.set(k, v); return; }
+      if (window.storage) { window.storage.set(k, v); return; }
       localStorage.setItem(k, v);
     } catch { localStorage.setItem(k, v); }
   }
