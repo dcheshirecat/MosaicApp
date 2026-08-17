@@ -132,6 +132,8 @@
   /* grid chart (pdf-imported) */
   #chart-grid-wrap { width: 100%; overflow: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; background: var(--bg); }
   #chart-grid-canvas { display: block; touch-action: pan-x pan-y; }
+  #chart-ruler-wrap { width: 100%; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
+  #chart-ruler-canvas { display: block; }
   #fix-chart-hint { font-size: 0.76rem; color: var(--accent); padding: 6px 12px; display: none; }
   #fix-chart-hint.show { display: block; }
 
@@ -340,6 +342,9 @@
       <div id="chart-overlay"></div>
       <div id="no-chart">No chart uploaded for this project.</div>
     </div>
+    <div id="chart-ruler-wrap" style="display:none">
+      <canvas id="chart-ruler-canvas"></canvas>
+    </div>
     <div id="chart-grid-wrap" style="display:none">
       <canvas id="chart-grid-canvas"></canvas>
     </div>
@@ -381,8 +386,8 @@ let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
 let gridCellSize = 10; // px, adjustable via zoom buttons
-let settings = { windowedView: false }; // app-wide viewing preferences
-const STITCH_WINDOW = 10; // "10 stitches at a time" view width, in columns
+let settings = { windowedView: false, windowSize: 10 }; // app-wide viewing preferences
+const STITCH_WINDOW = 10; // default "N stitches at a time" view width, in columns
 
 async function loadSettings() {
   const raw = await store.get('mc_settings');
@@ -868,11 +873,13 @@ function renderTracker() {
   if (isGrid) {
     document.getElementById('chart-wrap').style.display = 'none';
     document.getElementById('chart-grid-wrap').style.display = '';
+    document.getElementById('chart-ruler-wrap').style.display = '';
     document.getElementById('btn-window-view').style.display = '';
     syncWindowViewUI();
     renderChartGrid(p);
   } else {
     document.getElementById('chart-grid-wrap').style.display = 'none';
+    document.getElementById('chart-ruler-wrap').style.display = 'none';
     document.getElementById('chart-wrap').style.display = '';
     document.getElementById('btn-window-view').style.display = 'none';
     renderChart(p);
@@ -908,13 +915,13 @@ function renderChartGrid(p) {
   let curColIndex = p.currentStitch - 1;
   if (!isRightSide(p.currentRow)) curColIndex = g.cols - 1 - curColIndex;
 
-  // In windowed mode we only draw a STITCH_WINDOW-wide slice of columns,
+  // In windowed mode we only draw a stitch-window-wide slice of columns,
   // centered on the current stitch, and size cells to fill the screen
-  // width — this is the "10 stitches at a time" view for wide charts.
+  // width — this is the "N stitches at a time" view for wide charts.
   const windowed = settings.windowedView;
   let cs, colStart, colEnd;
   if (windowed) {
-    const winSize = Math.min(STITCH_WINDOW, g.cols);
+    const winSize = Math.min(settings.windowSize || STITCH_WINDOW, g.cols);
     cs = Math.max(4, Math.floor(wrap.clientWidth / winSize));
     colStart = Math.max(0, Math.min(g.cols - winSize, curColIndex - Math.floor(winSize / 2)));
     colEnd = colStart + winSize;
@@ -929,30 +936,89 @@ function renderChartGrid(p) {
   const ctx = canvas.getContext('2d');
 
   const symbol = p.adcSymbol || '⚓';
-  const drawSymbol = cs >= 10;
-  if (drawSymbol) {
-    ctx.font = `${Math.round(cs * 0.8)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+
+  // Helper: is this (canvas-row r, absolute-col c) cell already worked?
+  // Row 1 = bottom of chart = last canvas row. Rows below the current row
+  // (closer to canvas bottom) are fully done. Within the current row,
+  // stitches already worked (in that row's actual direction, RS vs WS)
+  // are also done.
+  function isDone(r, c) {
+    const rowNum = g.rows - r;
+    if (rowNum < p.currentRow) return true;
+    if (rowNum > p.currentRow) return false;
+    const stitchNum = isRightSide(rowNum) ? c + 1 : g.cols - c;
+    return stitchNum < p.currentStitch;
   }
 
-  // 1) fill every visible cell with its base color first
+  // 1) fill every visible cell with its base color, dimming completed ones
   for (let r = 0; r < g.rows; r++) {
     const y = r * cs;
     for (let c = colStart; c < colEnd; c++) {
       const code = g.cells[r][c];
       const isB = code === 2 || code === 3;
       ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
-      ctx.fillRect((c - colStart) * cs, y, cs, cs);
+      const x = (c - colStart) * cs;
+      ctx.fillRect(x, y, cs, cs);
+      if (isDone(r, c)) {
+        ctx.fillStyle = 'rgba(20,20,30,0.6)';
+        ctx.fillRect(x, y, cs, cs);
+      }
     }
   }
 
-  // 2) draw ADC symbols in a second pass, since reversible mode places them
-  //    in a different cell than the one whose color/fill they describe.
-  //    Symbols are ONLY drawn when the reversible toggle is on — when it's
-  //    off, the chart is shown exactly as extracted from the PDF (plain
-  //    colors/stitch types, no anchor markers overlaid at all).
-  if (drawSymbol && p.reversible) {
+  // 2) grid lines so every cell is clearly outlined, regardless of color.
+  //    Every 10th column (counted from the right, matching the ruler) gets
+  //    a bolder line for quick counting.
+  ctx.lineWidth = 1;
+  for (let r = 0; r <= g.rows; r++) {
+    ctx.strokeStyle = 'rgba(128,128,140,0.5)';
+    ctx.beginPath();
+    ctx.moveTo(0, r * cs + 0.5);
+    ctx.lineTo((colEnd - colStart) * cs, r * cs + 0.5);
+    ctx.stroke();
+  }
+  for (let c = colStart; c <= colEnd; c++) {
+    const fromRight = g.cols - c;
+    ctx.strokeStyle = (fromRight % 10 === 0) ? 'rgba(200,200,210,0.75)' : 'rgba(128,128,140,0.5)';
+    const x = (c - colStart) * cs + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, g.rows * cs);
+    ctx.stroke();
+  }
+
+  // 3) X mark on every double-crochet cell — ALWAYS drawn (any zoom level,
+  //    regardless of the reversible toggle) since it marks the stitch type
+  //    itself, not the reversible anchor. Drawn as vector strokes rather
+  //    than text so it never disappears at small cell sizes.
+  const xPad = Math.max(1.5, cs * 0.22);
+  for (let r = 0; r < g.rows; r++) {
+    for (let c = colStart; c < colEnd; c++) {
+      const code = g.cells[r][c];
+      if (code !== 1 && code !== 3) continue;
+      const isB = code === 2 || code === 3;
+      const x0 = (c - colStart) * cs, y0 = r * cs;
+      ctx.strokeStyle = isB ? '#ffffff' : '#000000';
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = Math.max(1, cs * 0.09);
+      ctx.beginPath();
+      ctx.moveTo(x0 + xPad, y0 + xPad);
+      ctx.lineTo(x0 + cs - xPad, y0 + cs - xPad);
+      ctx.moveTo(x0 + cs - xPad, y0 + xPad);
+      ctx.lineTo(x0 + xPad, y0 + cs - xPad);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // 4) reversible-technique anchor symbol, in the cell ABOVE every X —
+  //    only shown when the reversible toggle is on, since it marks where
+  //    to anchor on the reverse side. The X itself (step 3) is unaffected
+  //    by this toggle and is always visible.
+  if (p.reversible) {
+    ctx.font = `${Math.max(6, Math.round(cs * 0.8))}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     for (let r = 0; r < g.rows; r++) {
       for (let c = colStart; c < colEnd; c++) {
         const code = g.cells[r][c];
@@ -1001,6 +1067,8 @@ function renderChartGrid(p) {
     renderChartGrid(p);
   } : null;
 
+  renderChartRuler(g, cs, colStart, colEnd);
+
   // keep current row scrolled into view (vertical only — the windowed
   // view already fits horizontally, and full view scrolls horizontally
   // by hand)
@@ -1010,13 +1078,59 @@ function renderChartGrid(p) {
   }
 }
 
+// Sticky ruler above the grid: ticks + numbers every 10 columns, counted
+// from the RIGHT edge (10, 20, 30, 40…) — a fixed physical ruler that does
+// NOT flip with right-side/wrong-side row direction, so it always reads
+// the same way no matter which row you're on.
+function renderChartRuler(g, cs, colStart, colEnd) {
+  const canvas = document.getElementById('chart-ruler-canvas');
+  const H = 20;
+  canvas.width = (colEnd - colStart) * cs;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, H);
+  ctx.fillStyle = '#8892a4';
+  ctx.font = `${Math.min(11, Math.max(8, cs * 0.55))}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(136,146,164,0.6)';
+  ctx.lineWidth = 1;
+  for (let c = colStart; c < colEnd; c++) {
+    const fromRight = g.cols - c;
+    if (fromRight % 10 !== 0) continue;
+    const x = (c - colStart) * cs + cs / 2;
+    ctx.beginPath();
+    ctx.moveTo(x, H - 6);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+    ctx.fillText(String(fromRight), x, H / 2 - 2);
+  }
+}
+
+// Mirror horizontal scroll of the grid onto the sticky ruler above it.
+document.getElementById('chart-grid-wrap').addEventListener('scroll', (e) => {
+  document.getElementById('chart-ruler-canvas').style.transform = `translateX(-${e.target.scrollLeft}px)`;
+});
+
+
 document.getElementById('btn-zoom-in').addEventListener('click', () => {
-  gridCellSize = Math.min(24, gridCellSize + 2);
+  if (settings.windowedView) {
+    settings.windowSize = Math.max(4, settings.windowSize - 2);
+    saveSettings();
+  } else {
+    gridCellSize = Math.min(28, gridCellSize + 2);
+  }
   const p = getProject(activeId); if (p) renderChartGrid(p);
 });
 document.getElementById('btn-zoom-out').addEventListener('click', () => {
-  gridCellSize = Math.max(4, gridCellSize - 2);
-  const p = getProject(activeId); if (p) renderChartGrid(p);
+  const p = getProject(activeId); if (!p) return;
+  if (settings.windowedView) {
+    settings.windowSize = Math.min(p.chartGrid.cols, settings.windowSize + 2);
+    saveSettings();
+  } else {
+    gridCellSize = Math.max(2, gridCellSize - 2); // zoom out further to see overall progress
+  }
+  renderChartGrid(p);
 });
 document.getElementById('btn-fix-chart').addEventListener('click', () => {
   fixChartMode = !fixChartMode;
@@ -1153,8 +1267,6 @@ document.getElementById('btn-window-view').addEventListener('click', () => {
 
 function syncWindowViewUI() {
   document.getElementById('btn-window-view').classList.toggle('active', settings.windowedView);
-  document.getElementById('btn-zoom-in').style.display = settings.windowedView ? 'none' : '';
-  document.getElementById('btn-zoom-out').style.display = settings.windowedView ? 'none' : '';
 }
 
 // ── INIT ─────────────────────────────────────────────────────────────────
