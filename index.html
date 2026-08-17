@@ -811,40 +811,116 @@ document.getElementById('btn-crop-confirm').addEventListener('click', () => {
 });
 
 // cell code: 0 = A / sc, 1 = A / dc, 2 = B / sc, 3 = B / dc
+//
+// This reads each cell using its SHAPE, not just its overall darkness.
+// An "X" (double crochet) mark is two diagonal strokes crossing the cell
+// center, in a color that contrasts with the cell's own fill. That means:
+//   - the four edge-midpoints of a cell (top/bottom/left/right) always sit
+//     on plain fill color, since a corner-to-corner X never reaches them
+//   - the two diagonals themselves only carry stroke color when an X is
+//     actually drawn there
+// Comparing "diagonal" luminance against "edge-midpoint" (background)
+// luminance is far more resistant to slight crop misalignment, grid-line
+// bleed, and JPEG/render noise than a single whole-cell brightness/stdev
+// threshold, which was misreading solid-fill cells (no X at all) as
+// double-crochet cells whenever a grid line or border row leaked into the
+// sample window.
 function sampleGridFromRegion(ctx, rx, ry, rw, rh, rows, cols) {
   const imgData = ctx.getImageData(rx, ry, rw, rh);
   const data = imgData.data;
   const cellW = rw / cols, cellH = rh / rows;
+
+  function lumAt(x, y) {
+    x = Math.max(0, Math.min(rw - 1, Math.round(x)));
+    y = Math.max(0, Math.min(rh - 1, Math.round(y)));
+    const idx = (y * rw + x) * 4;
+    return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+  }
+
+  // average luminance over a small square patch centered at (x,y)
+  function patchLum(x, y, half) {
+    let sum = 0, n = 0;
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        sum += lumAt(x + dx, y + dy); n++;
+      }
+    }
+    return sum / n;
+  }
+
   const cells = [];
+  const rawScores = []; // per-cell diagnostic: |diagLum - bgLum| contrast, for tie-breaking later
   for (let r = 0; r < rows; r++) {
     const rowArr = new Array(cols);
-    const cy0 = Math.max(0, Math.round(r * cellH + cellH * 0.22));
-    const cy1 = Math.min(rh, Math.round(r * cellH + cellH * 0.78));
+    const scoreArr = new Array(cols);
+    const cyc = r * cellH + cellH * 0.5;
+    const cy0 = r * cellH + cellH * 0.20;
+    const cy1 = r * cellH + cellH * 0.80;
     for (let c = 0; c < cols; c++) {
-      const cx0 = Math.max(0, Math.round(c * cellW + cellW * 0.22));
-      const cx1 = Math.min(rw, Math.round(c * cellW + cellW * 0.78));
-      let sum = 0, sumSq = 0, n = 0;
-      for (let y = cy0; y < cy1; y++) {
-        const rowOffset = y * rw;
-        for (let x = cx0; x < cx1; x++) {
-          const idx = (rowOffset + x) * 4;
-          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-          sum += lum; sumSq += lum * lum; n++;
-        }
-      }
-      if (n === 0) { rowArr[c] = 0; continue; }
-      const mean = sum / n;
-      const variance = Math.max(0, (sumSq / n) - mean * mean);
-      const stdev = Math.sqrt(variance);
-      const isA = mean >= 128;
-      let dc;
-      if (isA) dc = (255 - mean) > 35 || stdev > 25;
-      else dc = mean > 35 || stdev > 25;
+      const cxc = c * cellW + cellW * 0.5;
+      const cx0 = c * cellW + cellW * 0.20;
+      const cx1 = c * cellW + cellW * 0.80;
+      const half = Math.max(1, Math.round(Math.min(cellW, cellH) * 0.09));
+
+      // background (fill-only) reference: edge midpoints, never touched by
+      // a corner-to-corner X stroke
+      const bgSamples = [
+        patchLum(cxc, cy0, half), // top-mid
+        patchLum(cxc, cy1, half), // bottom-mid
+        patchLum(cx0, cyc, half), // left-mid
+        patchLum(cx1, cyc, half), // right-mid
+      ];
+      const bgLum = bgSamples.reduce((a, b) => a + b, 0) / bgSamples.length;
+      const bgVariance = bgSamples.reduce((a, b) => a + (b - bgLum) * (b - bgLum), 0) / bgSamples.length;
+      const bgStdev = Math.sqrt(bgVariance);
+
+      // diagonal samples: on both diagonals, at the 30%/70% points, which
+      // is where an X's strokes cross if present
+      const diagSamples = [
+        patchLum(cx0, cy0, half), patchLum(cx1, cy1, half), // "\" diagonal
+        patchLum(cx0, cy1, half), patchLum(cx1, cy0, half), // "/" diagonal
+      ];
+      const diagLum = diagSamples.reduce((a, b) => a + b, 0) / diagSamples.length;
+
+      const contrast = Math.abs(diagLum - bgLum);
+      // require the background patches to agree with each other (real,
+      // uniform fill) so a stray grid-line or crop-edge artifact on just
+      // one side can't masquerade as an X by itself
+      const dc = contrast > 30 && bgStdev < 28;
+
+      const isA = bgLum >= 128;
       rowArr[c] = isA ? (dc ? 1 : 0) : (dc ? 3 : 2);
+      scoreArr[c] = contrast; // confidence that this cell really is an X
     }
     cells.push(rowArr);
+    rawScores.push(scoreArr);
   }
+
+  enforceNoStackedDoubleCrochet(cells, rawScores);
   return cells;
+}
+
+// Overlay/spike mosaic charts (the technique this app is built around) never
+// place a double-crochet "X" directly above another "X" in the same column
+// — DC marks only ever land on alternating rows, with a plain row between
+// them. If extraction ever reports two DC cells stacked in the same column,
+// that's a misread, not real pattern data. Resolve it by keeping whichever
+// of the two had the stronger X-contrast signal and reverting the weaker
+// one to a plain (non-DC) cell of the same color. This is what keeps the
+// reversible-anchor symbol from ever landing on a real "X" — see the
+// "never on the X cell itself" note where the anchor is drawn.
+function enforceNoStackedDoubleCrochet(cells, scores) {
+  const rows = cells.length;
+  if (!rows) return;
+  const cols = cells[0].length;
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows - 1; r++) {
+      const isDc = code => code === 1 || code === 3;
+      if (!isDc(cells[r][c]) || !isDc(cells[r + 1][c])) continue;
+      const loser = scores[r][c] <= scores[r + 1][c] ? r : r + 1;
+      cells[loser][c] = cells[loser][c] === 1 ? 0 : 2; // drop to the plain (sc) version of the same color
+    }
+  }
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
@@ -1058,6 +1134,13 @@ function renderChartGrid(p) {
         if (targetR < 0) continue; // no row above the top row — skip
 
         const targetCode = g.cells[targetR][c];
+        // Guard: an anchor should never sit on a cell that is itself an X.
+        // Genuine overlay-mosaic charts never stack two X's in one column
+        // (each DC row is separated from the next by a plain row), so this
+        // should be a no-op on correctly-read charts — it only protects
+        // against a stray misread slipping through, so the symbol never
+        // visibly covers a real "X" the way it did before.
+        if (targetCode === 1 || targetCode === 3) continue;
         const targetIsB = targetCode === 2 || targetCode === 3;
         ctx.fillStyle = targetIsB ? '#ffffff' : '#000000';
         ctx.globalAlpha = 0.85;
