@@ -63,6 +63,13 @@
   .color-picker-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
   .color-picker-presets button { width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); cursor: pointer; padding: 0; }
   .color-picker-presets button.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .color-picker-section-title { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 9px 0 5px; }
+  .custom-color-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .custom-color-item { position: relative; }
+  .custom-color-item button.color-use { width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; padding: 0; }
+  .custom-color-item button.color-delete { position: absolute; right: -3px; top: -6px; width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 10px; line-height: 13px; cursor: pointer; }
+  .save-color-row { display: flex; gap: 6px; margin-top: 8px; }
+  .save-color-row .btn-small { flex: 1; padding: 7px 5px; font-size: 0.72rem; }
   .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
   .btn-secondary { width: 100%; padding: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
   .btn-small { padding: 10px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; font-family: inherit; cursor: pointer; }
@@ -235,7 +242,7 @@
         </div>
         <canvas class="color-wheel" id="wheel-theme" width="160" height="160"></canvas>
         <input type="range" class="wheel-lightness" id="lightness-theme" min="0" max="100" value="50">
-        <div class="color-picker-presets" id="presets-theme"></div>
+        <div class="color-picker-presets" id="presets-theme"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-theme"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="theme">Save current color</button></div>
       </div>
       <button type="button" class="btn-small" id="btn-theme-reset">Reset</button>
     </div>
@@ -269,7 +276,7 @@
         </div>
         <canvas class="color-wheel" id="wheel-a" width="160" height="160"></canvas>
         <input type="range" class="wheel-lightness" id="lightness-a" min="0" max="100" value="50">
-        <div class="color-picker-presets" id="presets-a"></div>
+        <div class="color-picker-presets" id="presets-a"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-a"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="a">Save current color</button></div>
       </div>
     </div>
   </div>
@@ -285,7 +292,7 @@
         </div>
         <canvas class="color-wheel" id="wheel-b" width="160" height="160"></canvas>
         <input type="range" class="wheel-lightness" id="lightness-b" min="0" max="100" value="50">
-        <div class="color-picker-presets" id="presets-b"></div>
+        <div class="color-picker-presets" id="presets-b"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-b"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="b">Save current color</button></div>
       </div>
     </div>
   </div>
@@ -619,6 +626,36 @@ const COLOR_PRESETS = [
 ];
 const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f', theme: '#e94560' };
 const COLOR_PICKER_KEYS = ['a', 'b', 'theme'];
+let customColors = [];
+
+async function loadCustomColors() {
+  const raw = await store.get('mc_custom_colors');
+  if (raw) { try { customColors = JSON.parse(raw).filter(isValidHex).map(normalizeHex); } catch { customColors = []; } }
+  renderCustomColors();
+}
+async function saveCustomColors() { await store.set('mc_custom_colors', JSON.stringify(customColors)); }
+function renderCustomColors() {
+  COLOR_PICKER_KEYS.forEach(key => {
+    const wrap = document.getElementById('custom-presets-' + key);
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    customColors.forEach(hex => {
+      const item = document.createElement('div');
+      item.className = 'custom-color-item';
+      const use = document.createElement('button');
+      use.type = 'button'; use.className = 'color-use'; use.style.background = hex; use.title = hex;
+      use.addEventListener('click', () => { setColorPickerValue(key, hex); if (key === 'theme') applyThemeChange(hex); });
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'color-delete'; del.textContent = '×'; del.title = 'Remove saved color';
+      del.addEventListener('click', async e => {
+        e.stopPropagation();
+        customColors = customColors.filter(c => c !== hex);
+        await saveCustomColors(); renderCustomColors();
+      });
+      item.appendChild(use); item.appendChild(del); wrap.appendChild(item);
+    });
+  });
+}
 
 function isValidHex(v) { return /^#?[0-9a-fA-F]{6}$/.test(v || ''); }
 function normalizeHex(v) { v = v.trim(); if (!v.startsWith('#')) v = '#' + v; return v.toLowerCase(); }
@@ -720,6 +757,10 @@ function setColorPickerValue(key, hex) {
   document.querySelectorAll('#presets-' + key + ' button').forEach(b => {
     b.classList.toggle('selected', b.dataset.hex.toLowerCase() === hex);
   });
+  document.querySelectorAll('#custom-presets-' + key + ' .color-use').forEach(b => {
+    b.style.outline = (b.title || '').toLowerCase() === hex ? '2px solid var(--accent)' : '';
+    b.style.outlineOffset = '1px';
+  });
 }
 function getColorPickerValue(key) { return colorPickerState[key]; }
 
@@ -731,6 +772,21 @@ function applyThemeChange(hex) {
   applyAccentColor(hex);
   saveSettings();
 }
+
+document.querySelectorAll('.save-custom-color').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const key = btn.dataset.key;
+    const hex = getColorPickerValue(key);
+    if (!customColors.includes(hex)) {
+      customColors.unshift(hex);
+      if (customColors.length > 30) customColors.length = 30;
+      await saveCustomColors(); renderCustomColors();
+      toast('Color saved');
+    } else {
+      toast('Color already saved');
+    }
+  });
+});
 
 COLOR_PICKER_KEYS.forEach(key => {
   document.getElementById('f-color-' + key + '-swatch').addEventListener('click', () => {
@@ -907,303 +963,186 @@ async function startPdfTextImport(file) {
 
   const label = document.getElementById('pdf-import-label');
   const area  = document.getElementById('pdf-import-area');
-  label.textContent = 'Reading all PDF pages…';
+  label.textContent = 'Scanning all PDF pages…';
   area.className = '';
 
   try {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-    const positionedItems = [];
-
-    // IMPORTANT: Stitch Fiddle exports the chart on a later page (the first
-    // page is the legend). Always inspect EVERY page and retain the PDF text
-    // item's font name as an additional clue. Never assume page 1 is the chart.
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
-      const tc = await page.getTextContent({ disableCombineTextItems: false });
-
-      for (const item of tc.items) {
-        if (!item.str || !item.transform) continue;
-
-        positionedItems.push({
-          page: p,
-          str: item.str,
-          x: item.transform[4],
-          y: item.transform[5],
-          width: item.width || 0,
-          height: item.height || 0,
-          fontName: item.fontName || ''
-        });
-      }
+    const pageItems = [];
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
+      const page = await doc.getPage(pageNo);
+      const tc = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false });
+      pageItems.push(tc.items || []);
     }
 
-    const result = parseStitchFiddleGlyphs(positionedItems);
+    const result = parseStitchFiddlePdfItems(pageItems);
     if (!result) {
-      label.textContent = `Could not find a Stitch Fiddle chart in ${doc.numPages} PDF page${doc.numPages === 1 ? '' : 's'}.`;
+      label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart grid found`;
       area.className = '';
-      toast(`Scanned all ${doc.numPages} PDF pages, but no chart rows were detected`);
+      toast('No Stitch Fiddle chart grid found');
       return;
     }
 
     document.getElementById('f-rows').value = result.rows;
     document.getElementById('f-stitches').value = result.cols;
-
-    pendingChartGrid = {
-      rows: result.rows,
-      cols: result.cols,
-      cells: result.cells,
-      sourceRows: result.sourceRows
-    };
+    pendingChartGrid = { rows: result.rows, cols: result.cols, cells: result.cells, sourceRows: result.sourceRows };
     pendingChartSource = 'grid';
-
-    label.textContent = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts (${doc.numPages} PDF pages scanned)`;
+    label.textContent = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts (all ${doc.numPages} pages scanned)`;
     area.className = 'has-grid';
-    toast(`Chart parsed: ${result.rows} rows × ${result.cols} sts`);
-
+    toast(`Chart parsed: ${result.rows} rows × ${result.cols} stitches`);
   } catch (err) {
     console.error('Stitch Fiddle PDF import failed', err);
-    label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : err);
+    label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
     area.className = '';
     toast('PDF read error');
   }
 }
 
-// Robust coordinate-based Stitch Fiddle PDF parser.
-//
-// Stitch Fiddle's exported PDF has a tiny fixed-width symbol font. Depending
-// on the pdf.js version/device, the text layer may be emitted as:
-//   1) one long row item containing the whole row, or
-//   2) several items (left frame, spaces, runs of !, right frame).
-//
-// The old importer depended on a particular item shape and hard-coded X
-// ranges. That is why a perfectly valid PDF could produce "Could not find
-// chart rows". This parser instead finds the 202 row markers themselves,
-// groups nearby text by Y, derives the character pitch from the PDF geometry,
-// and places every ! by its actual X coordinate.
-// Robust coordinate-based Stitch Fiddle PDF parser.
-//
-// Stitch Fiddle's PDF text layer is unusual: a single visual chart row may be
-// emitted as several PDF text items, while completely blank rows may be one
-// giant text item containing hundreds of spaces.  The parser therefore works
-// from the visual coordinates, not from the order/shape of text items.
-//
-// Important details for Stitch Fiddle exports:
-//   - the chart is often on page 2 (page 1 is the legend)
-//   - normal chart rows start with $" (Color A) or %# (Color B)
-//   - the foundation row starts with $& and is row 0
-//   - each normal row has two frame glyphs at each side; the inner chart is
-//     the 184 stitch columns in the supplied 186-column Stitch Fiddle grid
-//   - ! is the PDF glyph used for the double-crochet/X cells
-//
-// cell code: 0 = A/sc, 1 = A/dc, 2 = B/sc, 3 = B/dc
-function parseStitchFiddleGlyphs(items) {
-  if (!Array.isArray(items) || !items.length) return null;
+// Robust Stitch Fiddle parser. Stitch Fiddle's PDF text layer is NOT one line
+// per chart row: spaces and ! glyphs are often emitted as many separate text
+// items. We therefore use their real PDF coordinates instead of joining lines.
+// This is deliberately independent of page number and of PDF.js text-item
+// ordering.
+function parseStitchFiddlePdfItems(pageItems) {
+  const candidates = [];
 
-  const leftRe = /^[%$]["#&]/;
-  const rightRe = /["#&][%$]$/;
-  const foundationRe = /^\$&.*\$$/;
+  for (let pageIndex = 0; pageIndex < pageItems.length; pageIndex++) {
+    const raw = pageItems[pageIndex] || [];
+    const items = raw.map(it => ({
+      page: pageIndex,
+      x: Number(it.transform && it.transform[4]) || 0,
+      y: Number(it.transform && it.transform[5]) || 0,
+      width: Number(it.width) || 0,
+      str: String(it.str || '')
+    })).filter(it => it.str.length);
 
-  const finite = n => Number.isFinite(n);
-  const clean = s => (typeof s === 'string' ? s : '');
-
-  // Keep only actual PDF text items.  Do NOT pre-filter by font name: some
-  // Android/pdf.js builds rename embedded StitchFiddle-Regular.
-  const all = items.filter(it =>
-    it && finite(it.x) && finite(it.y) && clean(it.str).length > 0
-  );
-
-  // Group text by visual baseline.  PDF.js Y values for these exports are
-  // separated by ~2.37pt, so a 0.65pt tolerance is safely within one row.
-  const groups = [];
-  const sorted = all.slice().sort((a, b) =>
-    a.page - b.page || a.y - b.y || a.x - b.x
-  );
-
-  for (const it of sorted) {
-    let g = null;
-    for (let i = groups.length - 1; i >= 0; i--) {
-      const candidate = groups[i];
-      if (candidate.page !== it.page) break;
-      if (Math.abs(candidate.y - it.y) <= 0.65) {
-        g = candidate;
-        break;
+    // Stitch Fiddle row items share an exact/near-exact baseline. Grouping is
+    // done by Y only; X is never used to decide whether a row exists.
+    items.sort((a,b) => a.y - b.y || a.x - b.x);
+    const groups = [];
+    for (const item of items) {
+      let g = groups.length ? groups[groups.length - 1] : null;
+      if (!g || Math.abs(g.y - item.y) > 0.9) {
+        g = { page: pageIndex, y: item.y, items: [] };
+        groups.push(g);
       }
-    }
-    if (!g) {
-      g = { page: it.page, y: it.y, items: [] };
-      groups.push(g);
-    }
-    g.items.push(it);
-  }
-
-  // A real Stitch Fiddle chart row has a left frame at the chart's left
-  // edge. Find those rows without assuming an absolute page coordinate.
-  const rowGroups = [];
-  const foundations = [];
-
-  for (const g of groups) {
-    const gi = g.items.slice().sort((a, b) => a.x - b.x);
-    const left = gi.find(it => leftRe.test(clean(it.str)));
-    if (left) {
-      rowGroups.push({
-        page: g.page,
-        y: g.y,
-        items: gi,
-        leftX: left.x,
-        colorChar: clean(left.str)[0]
-      });
-      continue;
+      g.items.push(item);
     }
 
-    // Row 0/foundation has $& ... $ and therefore does not match $" / %#.
-    const foundation = gi.find(it => foundationRe.test(clean(it.str)));
-    if (foundation) {
-      foundations.push({ page: g.page, y: g.y, items: gi, foundation });
-    }
-  }
+    for (const g of groups) {
+      const sorted = g.items.slice().sort((a,b) => a.x - b.x);
+      // The real chart has a two-glyph left frame: $" for A or %# for B.
+      // Row 0 has $& and is retained as the foundation row.
+      const left = sorted.find(it => it.x < 120 && /^[$%]["#&]/.test(it.str));
+      if (!left) continue;
 
-  // Deduplicate rows at the same visual Y. This protects against PDF.js builds
-  // that expose the same text object twice.
-  rowGroups.sort((a, b) => a.page - b.page || a.y - b.y || a.leftX - b.leftX);
-  const rows = [];
-  for (const row of rowGroups) {
-    const prev = rows[rows.length - 1];
-    if (prev && prev.page === row.page && Math.abs(prev.y - row.y) < 0.8) {
-      continue;
-    }
-    rows.push(row);
-  }
+      const colorChar = left.str[0];
+      const foundation = left.str.startsWith('$&');
+      if (colorChar !== '$' && colorChar !== '%') continue;
 
-  if (rows.length < 2) return null;
-
-  // Derive the horizontal glyph pitch from the chart itself. Stitch Fiddle
-  // uses the same square-ish pitch vertically and horizontally. The row
-  // baselines are particularly reliable, even when the text layer splits
-  // individual rows into many runs.
-  const ys = rows.map(r => r.y).sort((a, b) => a - b);
-  const yDiffs = [];
-  for (let i = 1; i < ys.length; i++) {
-    const d = ys[i] - ys[i - 1];
-    if (d > 1.0 && d < 4.0) yDiffs.push(d);
-  }
-  yDiffs.sort((a, b) => a - b);
-  let pitch = yDiffs.length ? yDiffs[Math.floor(yDiffs.length / 2)] : null;
-
-  // Fallback: ! runs encode their own advance very accurately. For a run of
-  // N glyphs, width/(N-1) is close enough for column placement when no row
-  // spacing is available.
-  if (!pitch || !finite(pitch) || pitch <= 0) {
-    const candidates = [];
-    for (const it of all) {
-      const s = clean(it.str);
-      if (!s.includes('!') || s.length < 2 || !it.width) continue;
-      const n = s.split('!').length - 1;
-      if (n >= 2) {
-        const c = it.width / (n - 1);
-        if (c > 1 && c < 4) candidates.push(c);
+      // Right frame may be a separate item or the tail of a long item.
+      const right = sorted
+        .filter(it => it.x > left.x + 100 && /["#&][$%]$/.test(it.str))
+        .sort((a,b) => b.x - a.x)[0] || null;
+      if (!right) {
+        // A complete row can still be recognized by a long text run ending in
+        // the right frame. Look for the furthest item whose text contains it.
+        const tail = sorted.filter(it => /["#&][$%]$/.test(it.str)).sort((a,b) => b.x-a.x)[0];
+        if (tail) { /* same object, retained below */ }
       }
-    }
-    candidates.sort((a, b) => a - b);
-    if (candidates.length) pitch = candidates[Math.floor(candidates.length / 2)];
-  }
 
-  if (!pitch || !finite(pitch)) return null;
-
-  // The right frame is not required for detection. When present, use its
-  // coordinate to determine the chart width. Otherwise use the supplied
-  // Stitch Fiddle frame width / pitch. The normal grid has 184 inner cells.
-  const rightXs = [];
-  for (const row of rows) {
-    for (const it of row.items) {
-      const s = clean(it.str);
-      const idx = s.search(rightRe);
-      if (idx < 0) continue;
-      // A text run can contain the right frame after a long sequence of
-      // spaces, so its character origin is x + idx*pitch.
-      rightXs.push(it.x + idx * pitch);
-    }
-  }
-
-  let cols = 184; // Stitch Fiddle's 186-column frame leaves 184 stitch cells.
-  if (rightXs.length) {
-    const right = rightXs.slice().sort((a, b) => a - b);
-    const rightX = right[Math.floor(right.length / 2)];
-    const leftXs = rows.map(r => r.leftX).sort((a, b) => a - b);
-    const leftX = leftXs[Math.floor(leftXs.length / 2)];
-    const estimated = Math.round((rightX - leftX) / pitch) - 2;
-    if (estimated >= 1 && estimated <= 1000) cols = estimated;
-  }
-
-  // Prefer a full-frame row's text length when it gives an unambiguous count.
-  // A row containing '$" ... "$' has 4 frame characters, so inner length is
-  // the number of actual stitch cells. Ignore rows containing only borders.
-  for (const row of rows) {
-    for (const it of row.items) {
-      const s = clean(it.str);
-      if (leftRe.test(s) && rightRe.test(s) && s.length >= 10) {
-        const innerLen = s.length - 4;
-        if (innerLen >= 1 && innerLen <= 1000) cols = Math.max(cols, innerLen);
-      }
-    }
-  }
-
-  // In this export the complete frame gives 184 cells. If a weird text-layer
-  // split caused a larger whitespace count, never let that silently change
-  // the chart width beyond the actual frame geometry.
-  if (cols > 500) cols = 184;
-
-  const cells = [];
-  const sourceRows = [];
-
-  // PDF.js transform Y is bottom-up, so descending Y reproduces the visual
-  // top-to-bottom chart order. Keep every detected normal row.
-  rows.sort((a, b) => b.page - a.page || b.y - a.y);
-
-  for (const row of rows) {
-    const isColorA = row.colorChar === '$';
-    const rowCells = new Array(cols).fill(isColorA ? 0 : 2);
-    const innerStartX = row.leftX + 2 * pitch;
-
-    for (const it of row.items) {
-      const s = clean(it.str);
-      if (!s.includes('!')) continue;
-
-      // The ! glyphs in a run occupy consecutive stitch columns. We use the
-      // actual item's X coordinate, then the fixed PDF glyph pitch for each
-      // character inside that run. This preserves the source X position.
-      for (let i = 0; i < s.length; i++) {
-        if (s[i] !== '!') continue;
-        const glyphX = it.x + i * pitch;
-        const col = Math.round((glyphX - innerStartX) / pitch);
-        if (col >= 0 && col < cols) {
-          rowCells[col] = isColorA ? 1 : 3;
+      let pitch = null;
+      let rightX = null;
+      if (right) {
+        rightX = right.x;
+        pitch = (rightX - left.x) / 186;
+      } else if (/["#&][$%]$/.test(left.str) && left.str.length >= 4 && left.width > 0) {
+        // Empty rows are often emitted by PDF.js as ONE text item containing
+        // the entire run of spaces plus the right frame, e.g.
+        // $\"<184 spaces>\"$. In that case there is no separate right
+        // frame item, so recover the monospaced pitch from the full item.
+        pitch = left.width / left.str.length;
+        rightX = left.x + pitch * 186;
+      } else {
+        const tail = sorted.filter(it => /["#&][$%]$/.test(it.str)).sort((a,b) => b.x-a.x)[0];
+        if (tail && tail.width > 0) {
+          pitch = tail.width / Math.max(1, tail.str.length);
+          rightX = tail.x;
         }
       }
+      if (!Number.isFinite(pitch) || pitch <= 0 || rightX == null) continue;
+
+      // The frame occupies two glyph positions; the right frame begins after
+      // 184 interior stitches. This gives the actual physical pitch of this
+      // PDF rather than assuming a font size or a fixed X coordinate.
+      const cols = 184;
+
+      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
+      for (const it of sorted) {
+        // Ignore the numeric row labels outside the chart and ordinary labels.
+        if (it.x < left.x - 3 || it.x > rightX + pitch * 2) continue;
+        const s = it.str;
+        const startPos = Math.round((it.x - left.x) / pitch);
+        for (let i = 0; i < s.length; i++) {
+          if (s[i] !== '!') continue;
+          const physicalPos = startPos + i;
+          const col = physicalPos - 2; // two left-frame glyphs
+          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
+        }
+      }
+
+      // Find the Stitch Fiddle source row number on the left side when it is
+      // present. It is useful metadata, and also makes ordering deterministic.
+      const labelItem = sorted.find(it => it.x >= 68 && it.x < left.x && /^\d+$/.test(it.str));
+      const sourceRow = labelItem ? parseInt(labelItem.str, 10) : null;
+      candidates.push({ page: pageIndex, y: g.y, sourceRow, cells, colorChar, foundation });
     }
-
-    cells.push(rowCells);
-    sourceRows.push(null);
   }
 
-  // Add Stitch Fiddle row 0 (foundation) when present. It is visually below
-  // the normal rows and contains chain symbols rather than ! cells. The app
-  // needs a real row for it so the imported 0..201 chart remains 202 rows.
-  if (foundations.length) {
-    const f = foundations.slice().sort((a, b) => b.page - a.page || b.y - a.y)[0];
-    const foundationCells = new Array(cols).fill(0); // Color A foundation.
-    cells.push(foundationCells);
-    sourceRows.push(0);
+  if (!candidates.length) return null;
+
+  // Deduplicate by source row where a PDF renderer exposes duplicate text
+  // items. Prefer the candidate with the most DC cells.
+  const byRow = new Map();
+  for (const row of candidates) {
+    if (row.sourceRow != null) {
+      const prev = byRow.get(row.sourceRow);
+      const score = row.cells.reduce((n,c) => n + (c === 1 || c === 3 ? 1 : 0), 0);
+      const prevScore = prev ? prev.cells.reduce((n,c) => n + (c === 1 || c === 3 ? 1 : 0), 0) : -1;
+      if (!prev || score > prevScore) byRow.set(row.sourceRow, row);
+    }
   }
 
-  // The supplied Stitch Fiddle chart is rows 201..0 = 202 rows. If the
-  // foundation is not exposed by a particular PDF.js build, do not pretend
-  // the chart is complete: keep the 201 normal rows but make the UI tell the
-  // user how many were found rather than failing with "chart not found".
-  if (!cells.length) return null;
+  let rows;
+  if (byRow.size >= 2) {
+    rows = Array.from(byRow.values()).sort((a,b) => a.sourceRow - b.sourceRow);
+  } else {
+    rows = candidates.sort((a,b) => a.y - b.y);
+  }
 
-  return { rows: cells.length, cols, cells, sourceRows };
+  // This Stitch Fiddle format numbers the chart 0..201. Preserve all 202
+  // source rows. The tracker stores them bottom-to-top because its existing
+  // grid mapper treats the last array row as app row 1.
+  const sourceRows = rows.map(r => r.sourceRow);
+  rows.sort((a,b) => {
+    if (a.sourceRow != null && b.sourceRow != null) return b.sourceRow - a.sourceRow;
+    return b.y - a.y;
+  });
+
+  return {
+    rows: rows.length,
+    cols: 184,
+    cells: rows.map(r => r.cells),
+    sourceRows: rows.map(r => r.sourceRow)
+  };
 }
 
+// Backward-compatible text parser retained for older callers. It is no longer
+// used for PDF imports because coordinate parsing is required for Stitch Fiddle.
+function parseStitchFiddleText(text) {
+  return null;
+}
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
 function openTracker(id) {
@@ -1396,57 +1335,38 @@ function renderChartGrid(p) {
     }
   }
 
-  // 4) reversible-technique anchor symbol, in the cell ABOVE every X.
-  //    The anchor is deliberately given a strong outline/halo so the emoji
-  //    remains readable on both light and dark yarn colors.
+  // 4) reversible-technique anchor symbol, in the cell ABOVE every X —
+  //    only shown when the reversible toggle is on, since it marks where
+  //    to anchor on the reverse side. The X itself (step 3) is unaffected
+  //    by this toggle and is always visible.
   if (p.reversible) {
     ctx.font = `${Math.max(6, Math.round(cs * 0.8))}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-
     for (let r = 0; r < g.rows; r++) {
       for (let c = colStart; c < colEnd; c++) {
         const code = g.cells[r][c];
         const isDc = code === 1 || code === 3;
         if (!isDc) continue;
 
-        // Always the cell one row above the X (toward the top of the
-        // rendered chart), never the X cell itself.
+        // always the cell one row "above" the X (toward the top of the
+        // canvas, i.e. r-1) — never on the X cell itself
         const targetR = r - 1;
-        if (targetR < 0) continue;
+        if (targetR < 0) continue; // no row above the top row — skip
 
         const targetCode = g.cells[targetR][c];
+        // Guard: an anchor should never sit on a cell that is itself an X.
+        // Genuine overlay-mosaic charts never stack two X's in one column
+        // (each DC row is separated from the next by a plain row), so this
+        // should be a no-op on correctly-read charts — it only protects
+        // against a stray misread slipping through, so the symbol never
+        // visibly covers a real "X" the way it did before.
         if (targetCode === 1 || targetCode === 3) continue;
-
         const targetIsB = targetCode === 2 || targetCode === 3;
-        const x = (c - colStart) * cs + cs / 2;
-        const y = targetR * cs + cs / 2 + 1;
-
-        // A contrasting halo gives the anchor a crisp silhouette even when
-        // the selected yarn colors are close to the emoji's own tones.
-        const outline = targetIsB ? '#000000' : '#ffffff';
-        const fill = targetIsB ? '#ffffff' : '#000000';
-
-        ctx.globalAlpha = 0.92;
-
-        // Soft shadow behind the glyph.
-        ctx.save();
-        ctx.shadowColor = outline;
-        ctx.shadowBlur = Math.max(2, cs * 0.14);
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.fillStyle = fill;
-        ctx.fillText(symbol, x, y);
-        ctx.restore();
-
-        // Crisp contrasting outline, then the anchor itself.
+        ctx.fillStyle = targetIsB ? '#ffffff' : '#000000';
+        ctx.globalAlpha = 0.85;
+        ctx.fillText(symbol, (c - colStart) * cs + cs / 2, targetR * cs + cs / 2 + 1);
         ctx.globalAlpha = 1;
-        ctx.lineWidth = Math.max(1.5, cs * 0.11);
-        ctx.strokeStyle = outline;
-        ctx.strokeText(symbol, x, y);
-        ctx.fillStyle = fill;
-        ctx.fillText(symbol, x, y);
       }
     }
   }
@@ -1876,6 +1796,7 @@ function syncWindowViewUI() {
 (async () => {
   await loadAll();
   await loadSettings();
+  await loadCustomColors();
   syncWindowViewUI();
   renderList();
 })();
