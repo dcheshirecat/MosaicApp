@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mosaic Tracker</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --card: #0f3460;
+    --accent: #e94560;
+    --accent2: #533483;
+    --text: #eaeaea;
+    --muted: #8892a4;
+    --border: #2a3a5c;
+    --row-hi: rgba(233,69,96,0.25);
+    --success: #4ecca3;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; min-height: 100vh; overflow-x: hidden; }
+
+  /* ── NAV ── */
+  #nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
+  #nav h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; }
+  #nav-back { display: none; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
+
+  /* ── SCREENS ── */
+  .screen { display: none; padding: 16px; }
+  .screen.active { display: block; }
+
+  /* ── PROJECT LIST ── */
+  #btn-new { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; letter-spacing: 0.04em; margin-bottom: 20px; }
+  .project-card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 14px; cursor: pointer; border: 1px solid var(--border); transition: border-color 0.15s; }
+  .project-card:active { border-color: var(--accent); }
+  .project-swatches { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+  .swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); }
+  .project-info { flex: 1; min-width: 0; }
+  .project-name { font-size: 1rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .project-meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+  .project-progress { font-size: 0.78rem; color: var(--success); margin-top: 2px; }
+  .project-del { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+  #empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
+
+  /* ── FORMS ── */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+  input[type=text], input[type=number] { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; color: var(--text); font-size: 1rem; font-family: inherit; outline: none; }
+  input:focus { border-color: var(--accent); }
+  .color-row { display: flex; gap: 10px; align-items: center; }
+  .color-row input[type=text] { flex: 1; }
+  input[type=color] { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer; padding: 2px; flex-shrink: 0; }
+  .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
+  .btn-secondary { width: 100%; padding: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
+  .section-title { font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; margin-top: 4px; }
+
+  /* ── IMAGE UPLOAD ── */
+  #upload-area { width: 100%; min-height: 90px; background: var(--card); border: 2px dashed var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; position: relative; }
+  #upload-area.has-img { border-style: solid; border-color: var(--success); color: var(--success); }
+  #chart-file { display: none; }
+
+  /* ── TRACKER ── */
+  #tracker-header { margin-bottom: 14px; }
+  #tracker-name { font-size: 1.3rem; font-weight: bold; font-style: italic; }
+  #tracker-subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+
+  /* color band */
+  #color-band { display: flex; border-radius: 10px; overflow: hidden; margin-bottom: 16px; height: 54px; }
+  .color-half { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: bold; letter-spacing: 0.04em; transition: opacity 0.2s; }
+  .color-half.inactive { opacity: 0.35; }
+  .color-half span { background: rgba(0,0,0,0.35); border-radius: 6px; padding: 3px 8px; }
+
+  /* row + stitch counters */
+  #counters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .counter-card { background: var(--card); border-radius: 12px; padding: 14px 12px; text-align: center; border: 1px solid var(--border); }
+  .counter-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .counter-val { font-size: 2.2rem; font-weight: bold; line-height: 1; color: var(--text); }
+  .counter-of { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+  .counter-btns { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+  .counter-btns button { width: 38px; height: 38px; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .btn-minus { background: var(--border); color: var(--text); }
+  .btn-plus { background: var(--accent); color: #fff; }
+
+  /* chart */
+  #chart-section { background: var(--card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
+  #chart-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px 6px; }
+  #chart-wrap { position: relative; width: 100%; overflow: hidden; touch-action: none; }
+  #chart-img { width: 100%; display: block; user-select: none; -webkit-user-select: none; }
+  #chart-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  #no-chart { padding: 20px; text-align: center; color: var(--muted); font-size: 0.88rem; font-style: italic; }
+
+  /* row highlight canvas */
+  #chart-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  /* edit btn */
+  #btn-edit-project { width: 100%; padding: 11px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; cursor: pointer; margin-bottom: 8px; }
+
+  /* toast */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 20px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 999; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* mosaic note */
+  #mosaic-note { background: var(--surface); border-left: 3px solid var(--accent2); border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+  #mosaic-note strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div id="nav">
+  <button id="nav-back">&#8592;</button>
+  <h1>🧶 Mosaic Tracker</h1>
+  <div style="width:40px"></div>
+</div>
+
+<div id="screen-list" class="screen active">
+  <button id="btn-new">+ New Project</button>
+  <div id="project-list"></div>
+  <div id="empty-state">No projects yet.<br>Tap above to add your first blanket.</div>
+</div>
+
+<div id="screen-form" class="screen">
+  <p class="section-title" id="form-title">New Project</p>
+  <div class="form-group">
+    <label>Project Name</label>
+    <input type="text" id="f-name" placeholder="e.g. Winter Blanket">
+  </div>
+  <div class="form-group">
+    <label>Total Rows in Chart</label>
+    <input type="number" id="f-rows" placeholder="e.g. 60" min="1">
+  </div>
+  <div class="form-group">
+    <label>Stitches per Row</label>
+    <input type="number" id="f-stitches" placeholder="e.g. 120" min="1">
+  </div>
+  <div class="form-group">
+    <label>Color A (first color)</label>
+    <div class="color-row">
+      <input type="text" id="f-color-a-name" placeholder="e.g. Cream">
+      <input type="color" id="f-color-a-hex" value="#f5e6c8">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Color B (second color)</label>
+    <div class="color-row">
+      <input type="text" id="f-color-b-name" placeholder="e.g. Teal">
+      <input type="color" id="f-color-b-hex" value="#2a7f7f">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Stitch Fiddle Chart (optional)</label>
+    <div id="upload-area">
+      <span id="upload-label">Tap to upload chart image</span>
+    </div>
+    <input type="file" id="chart-file" accept="image/*">
+  </div>
+  <button class="btn-primary" id="btn-save-project">Save Project</button>
+  <button class="btn-secondary" id="btn-cancel-form">Cancel</button>
+</div>
+
+<div id="screen-tracker" class="screen">
+  <div id="tracker-header">
+    <div id="tracker-name"></div>
+    <div id="tracker-subtitle"></div>
+  </div>
+
+  <div id="color-band">
+    <div class="color-half" id="color-half-a"><span id="color-label-a"></span></div>
+    <div class="color-half" id="color-half-b"><span id="color-label-b"></span></div>
+  </div>
+
+  <div id="mosaic-note">
+    <strong>Mosaic ADC reminder:</strong> Rows 1–2 = Color A &nbsp;·&nbsp; Rows 3–4 = Color B, alternating every 2 rows. Right-side rows use anchored double crochet for floats.
+  </div>
+
+  <div id="counters">
+    <div class="counter-card">
+      <div class="counter-label">Row</div>
+      <div class="counter-val" id="ctr-row">1</div>
+      <div class="counter-of" id="ctr-row-of">of —</div>
+      <div class="counter-btns">
+        <button class="btn-minus" id="row-minus">−</button>
+        <button class="btn-plus" id="row-plus">+</button>
+      </div>
+    </div>
+    <div class="counter-card">
+      <div class="counter-label">Stitch</div>
+      <div class="counter-val" id="ctr-stitch">1</div>
+      <div class="counter-of" id="ctr-stitch-of">of —</div>
+      <div class="counter-btns">
+        <button class="btn-minus" id="stitch-minus">−</button>
+        <button class="btn-plus" id="stitch-plus">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="chart-section">
+    <div id="chart-label">Chart — tap a row to jump</div>
+    <div id="chart-wrap">
+      <img id="chart-img" style="display:none">
+      <canvas id="chart-canvas"></canvas>
+      <div id="chart-overlay"></div>
+      <div id="no-chart">No chart uploaded for this project.</div>
+    </div>
+  </div>
+
+  <button id="btn-edit-project">Edit Project Settings</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── STORAGE ──────────────────────────────────────────────────────────────
+const store = {
+  async get(k) {
+    try {
+      if (window.storage) { const r = await window.storage.get(k); return r ? r.value : null; }
+      return localStorage.getItem(k);
+    } catch { return localStorage.getItem(k); }
+  },
+  async set(k, v) {
+    try {
+      if (window.storage) { await window.storage.set(k, v); return; }
+      localStorage.setItem(k, v);
+    } catch { localStorage.setItem(k, v); }
+  }
+};
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+let projects = [];   // array of project objects
+let editingId = null; // null = new, else project id
+let activeId = null;  // currently open tracker
+let pendingImageData = null; // base64 for new upload
+
+// ── HELPERS ───────────────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function toast(msg, ms = 1800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms);
+}
+function activeColor(row) {
+  // mosaic: 2 rows per color, starts with A
+  return Math.floor((row - 1) / 2) % 2 === 0 ? 'A' : 'B';
+}
+function isRightSide(row) { return row % 2 === 1; } // odd = RS in standard mosaic
+
+// ── PERSISTENCE ──────────────────────────────────────────────────────────
+async function loadAll() {
+  const raw = await store.get('mc_projects');
+  projects = raw ? JSON.parse(raw) : [];
+}
+async function saveAll() {
+  await store.set('mc_projects', JSON.stringify(projects));
+}
+function getProject(id) { return projects.find(p => p.id === id); }
+
+// ── SCREENS ──────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  document.getElementById('nav-back').style.display = id === 'list' ? 'none' : 'block';
+}
+
+// ── PROJECT LIST ──────────────────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById('project-list');
+  const empty = document.getElementById('empty-state');
+  list.innerHTML = '';
+  if (!projects.length) { empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  projects.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    const pct = Math.round(((p.currentRow - 1) / p.totalRows) * 100);
+    card.innerHTML = `
+      <div class="project-swatches">
+        <div class="swatch" style="background:${p.colorAHex}"></div>
+        <div class="swatch" style="background:${p.colorBHex}"></div>
+      </div>
+      <div class="project-info">
+        <div class="project-name">${p.name}</div>
+        <div class="project-meta">${p.stitches} sts · ${p.totalRows} rows</div>
+        <div class="project-progress">Row ${p.currentRow} / ${p.totalRows} &nbsp;·&nbsp; ${pct}%</div>
+      </div>
+      <button class="project-del" data-id="${p.id}" title="Delete">🗑</button>`;
+    card.querySelector('.project-del').addEventListener('click', e => {
+      e.stopPropagation();
+      if (confirm(`Delete "${p.name}"?`)) {
+        projects = projects.filter(x => x.id !== p.id);
+        saveAll(); renderList();
+      }
+    });
+    card.addEventListener('click', () => openTracker(p.id));
+    list.appendChild(card);
+  });
+}
+
+// ── FORM ──────────────────────────────────────────────────────────────────
+function openForm(id = null) {
+  editingId = id;
+  pendingImageData = null;
+  const p = id ? getProject(id) : null;
+  document.getElementById('form-title').textContent = id ? 'Edit Project' : 'New Project';
+  document.getElementById('f-name').value = p ? p.name : '';
+  document.getElementById('f-rows').value = p ? p.totalRows : '';
+  document.getElementById('f-stitches').value = p ? p.stitches : '';
+  document.getElementById('f-color-a-name').value = p ? p.colorAName : '';
+  document.getElementById('f-color-a-hex').value = p ? p.colorAHex : '#f5e6c8';
+  document.getElementById('f-color-b-name').value = p ? p.colorBName : '';
+  document.getElementById('f-color-b-hex').value = p ? p.colorBHex : '#2a7f7f';
+  const ul = document.getElementById('upload-label');
+  ul.textContent = (p && p.chartImage) ? '✓ Chart uploaded (tap to replace)' : 'Tap to upload chart image';
+  document.getElementById('upload-area').className = (p && p.chartImage) ? 'has-img' : '';
+  showScreen('form');
+}
+
+document.getElementById('upload-area').addEventListener('click', () => {
+  document.getElementById('chart-file').click();
+});
+document.getElementById('chart-file').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    pendingImageData = ev.target.result;
+    document.getElementById('upload-label').textContent = '✓ ' + file.name;
+    document.getElementById('upload-area').className = 'has-img';
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('btn-save-project').addEventListener('click', async () => {
+  const name = document.getElementById('f-name').value.trim();
+  const totalRows = parseInt(document.getElementById('f-rows').value);
+  const stitches = parseInt(document.getElementById('f-stitches').value);
+  const colorAName = document.getElementById('f-color-a-name').value.trim() || 'Color A';
+  const colorAHex = document.getElementById('f-color-a-hex').value;
+  const colorBName = document.getElementById('f-color-b-name').value.trim() || 'Color B';
+  const colorBHex = document.getElementById('f-color-b-hex').value;
+  if (!name || !totalRows || !stitches) { toast('Please fill in name, rows, and stitches.'); return; }
+
+  if (editingId) {
+    const p = getProject(editingId);
+    p.name = name; p.totalRows = totalRows; p.stitches = stitches;
+    p.colorAName = colorAName; p.colorAHex = colorAHex;
+    p.colorBName = colorBName; p.colorBHex = colorBHex;
+    if (pendingImageData) p.chartImage = pendingImageData;
+  } else {
+    const p = {
+      id: uid(), name, totalRows, stitches,
+      colorAName, colorAHex, colorBName, colorBHex,
+      chartImage: pendingImageData || null,
+      currentRow: 1, currentStitch: 1
+    };
+    projects.push(p);
+  }
+  await saveAll();
+  renderList();
+  if (editingId) { openTracker(editingId); }
+  else { showScreen('list'); }
+});
+document.getElementById('btn-cancel-form').addEventListener('click', () => {
+  editingId ? openTracker(editingId) : showScreen('list');
+});
+document.getElementById('btn-new').addEventListener('click', () => openForm(null));
+
+// ── TRACKER ───────────────────────────────────────────────────────────────
+function openTracker(id) {
+  activeId = id;
+  renderTracker();
+  showScreen('tracker');
+}
+
+function renderTracker() {
+  const p = getProject(activeId); if (!p) return;
+  document.getElementById('tracker-name').textContent = p.name;
+  const rs = isRightSide(p.currentRow);
+  document.getElementById('tracker-subtitle').textContent =
+    `${rs ? 'Right side (ADC)' : 'Wrong side'} · Color changes every 2 rows`;
+
+  // color band
+  const col = activeColor(p.currentRow);
+  const ha = document.getElementById('color-half-a');
+  const hb = document.getElementById('color-half-b');
+  ha.style.background = p.colorAHex;
+  hb.style.background = p.colorBHex;
+  ha.querySelector('span').textContent = p.colorAName;
+  hb.querySelector('span').textContent = p.colorBName;
+  ha.classList.toggle('inactive', col !== 'A');
+  hb.classList.toggle('inactive', col !== 'B');
+
+  // counters
+  document.getElementById('ctr-row').textContent = p.currentRow;
+  document.getElementById('ctr-row-of').textContent = `of ${p.totalRows}`;
+  document.getElementById('ctr-stitch').textContent = p.currentStitch;
+  document.getElementById('ctr-stitch-of').textContent = `of ${p.stitches}`;
+
+  // chart
+  renderChart(p);
+}
+
+// ── CHART RENDERING ───────────────────────────────────────────────────────
+let chartImgLoaded = false;
+let _chartImg = null;
+
+function renderChart(p) {
+  const wrap = document.getElementById('chart-wrap');
+  const img = document.getElementById('chart-img');
+  const noChart = document.getElementById('no-chart');
+  const canvas = document.getElementById('chart-canvas');
+  const overlay = document.getElementById('chart-overlay');
+
+  if (!p.chartImage) {
+    img.style.display = 'none';
+    canvas.style.display = 'none';
+    overlay.style.display = 'none';
+    noChart.style.display = '';
+    return;
+  }
+
+  noChart.style.display = 'none';
+  img.style.display = 'block';
+  canvas.style.display = 'block';
+  overlay.style.display = 'block';
+
+  const drawHighlight = () => {
+    const w = img.offsetWidth;
+    const h = img.offsetHeight;
+    canvas.width = w; canvas.height = h;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const rowH = h / p.totalRows;
+    // bottom = row 1 → row N is at top
+    const rowIndex = p.totalRows - p.currentRow; // 0-indexed from top
+    const y = rowIndex * rowH;
+
+    // dim everything else
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, w, y);
+    ctx.fillRect(0, y + rowH, w, h - y - rowH);
+
+    // highlight band
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, y + 1, w - 2, rowH - 2);
+
+    // row label
+    const col = activeColor(p.currentRow);
+    const colName = col === 'A' ? p.colorAName : p.colorBName;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    const label = `Row ${p.currentRow} · ${colName}`;
+    ctx.font = 'bold 11px sans-serif';
+    const tw = ctx.measureText(label).width;
+    ctx.fillRect(4, y + 3, tw + 10, 18);
+    ctx.fillStyle = '#e94560';
+    ctx.fillText(label, 9, y + 16);
+  };
+
+  if (img.src !== p.chartImage) {
+    chartImgLoaded = false;
+    img.onload = () => { chartImgLoaded = true; drawHighlight(); };
+    img.src = p.chartImage;
+  } else if (chartImgLoaded) {
+    drawHighlight();
+  }
+
+  // tap overlay
+  overlay.onclick = (e) => {
+    const rect = overlay.getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const h = rect.height;
+    const rowH = h / p.totalRows;
+    const rowIndexFromTop = Math.floor(relY / rowH);
+    const tappedRow = p.totalRows - rowIndexFromTop; // bottom = row 1
+    const clamped = Math.max(1, Math.min(p.totalRows, tappedRow));
+    p.currentRow = clamped;
+    p.currentStitch = 1;
+    saveAll();
+    renderTracker();
+    toast(`Jumped to Row ${clamped}`);
+  };
+}
+
+// ── COUNTER BUTTONS ───────────────────────────────────────────────────────
+document.getElementById('row-plus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  if (p.currentRow < p.totalRows) { p.currentRow++; p.currentStitch = 1; saveAll(); renderTracker(); }
+  else toast('Last row reached!');
+});
+document.getElementById('row-minus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  if (p.currentRow > 1) { p.currentRow--; p.currentStitch = 1; saveAll(); renderTracker(); }
+  else toast('Already at row 1');
+});
+document.getElementById('stitch-plus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  if (p.currentStitch < p.stitches) { p.currentStitch++; saveAll(); renderTracker(); }
+  else toast('Last stitch in row!');
+});
+document.getElementById('stitch-minus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  if (p.currentStitch > 1) { p.currentStitch--; saveAll(); renderTracker(); }
+  else toast('Already at stitch 1');
+});
+
+// ── EDIT ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-edit-project').addEventListener('click', () => openForm(activeId));
+
+// ── BACK NAV ─────────────────────────────────────────────────────────────
+document.getElementById('nav-back').addEventListener('click', () => {
+  const fs = document.getElementById('screen-form');
+  if (fs.classList.contains('active')) {
+    editingId ? openTracker(editingId) : showScreen('list');
+  } else {
+    showScreen('list');
+    renderList();
+  }
+});
+
+// ── INIT ─────────────────────────────────────────────────────────────────
+(async () => {
+  await loadAll();
+  renderList();
+})();
+</script>
+</body>
+</html>
