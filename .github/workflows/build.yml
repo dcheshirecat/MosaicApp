@@ -2,7 +2,7 @@ name: Build Mosaic Tracker APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -19,257 +19,279 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Set up Gradle
+      - name: Install Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.4'
+          gradle-version: '8.2'
 
-      # ── Scaffold Android project ───────────────────────────────────────
-
-      - name: Create project structure
+      - name: Scaffold Android project
         run: |
+          set -e
           mkdir -p app/src/main/java/com/mosaictracker
-          mkdir -p app/src/main/assets
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/xml
-          mkdir -p app/src/main/res/mipmap-hdpi
-          mkdir -p app/src/main/res/mipmap-mdpi
-          mkdir -p app/src/main/res/mipmap-xhdpi
-          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/assets
 
-      - name: Copy index.html into assets
-        run: cp index.html app/src/main/assets/index.html
+          python3 - << 'PYEOF'
+import os
 
-      - name: Write MainActivity.java
+def w(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
+    with open(path, 'w') as f:
+        f.write(content)
+
+w('settings.gradle', """\
+pluginManagement {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
+}
+dependencyResolutionManagement {
+  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+  repositories {
+    google()
+    mavenCentral()
+  }
+}
+rootProject.name = "MosaicTracker"
+include ':app'
+""")
+
+w('build.gradle', """\
+plugins {
+  id 'com.android.application' version '8.2.2' apply false
+}
+""")
+
+w('app/build.gradle', """\
+plugins {
+  id 'com.android.application'
+}
+android {
+  namespace 'com.mosaictracker'
+  compileSdk 34
+  defaultConfig {
+    applicationId 'com.mosaictracker'
+    minSdk 26
+    targetSdk 34
+    versionCode 1
+    versionName '1.0'
+  }
+  buildTypes {
+    release {
+      minifyEnabled false
+      signingConfig signingConfigs.debug
+    }
+  }
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
+dependencies {
+  implementation 'androidx.appcompat:appcompat:1.6.1'
+}
+""")
+
+w('app/src/main/AndroidManifest.xml', """\
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32"/>
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+  <application
+    android:label="Mosaic Tracker"
+    android:allowBackup="true"
+    android:usesCleartextTraffic="true"
+    android:hardwareAccelerated="true"
+    android:supportsRtl="true">
+    <activity
+      android:name=".MainActivity"
+      android:exported="true"
+      android:screenOrientation="portrait"
+      android:windowSoftInputMode="adjustResize">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
+""")
+
+w('app/src/main/res/xml/network_security_config.xml', """\
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+  <base-config cleartextTrafficPermitted="true"/>
+</network-security-config>
+""")
+
+w('app/src/main/res/values/strings.xml', """\
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">Mosaic Tracker</string>
+</resources>
+""")
+
+w('app/src/main/java/com/mosaictracker/MainActivity.java', """\
+package com.mosaictracker;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Bundle;
+import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.app.Activity;
+import android.content.Intent;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+
+  private WebView webView;
+  private ValueCallback<Uri[]> filePathCallback;
+  private static final int FILE_CHOOSER_REQUEST = 1;
+
+  @Override
+  protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    webView = new WebView(this);
+    setContentView(webView);
+
+    WebSettings ws = webView.getSettings();
+    ws.setJavaScriptEnabled(true);
+    ws.setDomStorageEnabled(true);
+    ws.setAllowFileAccess(true);
+    ws.setAllowContentAccess(true);
+    ws.setMediaPlaybackRequiresUserGesture(false);
+
+    webView.addJavascriptInterface(new StorageBridge(this), "AndroidStorage");
+    webView.addJavascriptInterface(new NativeBridge(this), "NativeBridge");
+
+    webView.setWebViewClient(new WebViewClient());
+    webView.setWebChromeClient(new WebChromeClient() {
+      @Override
+      public boolean onShowFileChooser(WebView wv,
+          ValueCallback<Uri[]> cb,
+          FileChooserParams params) {
+        filePathCallback = cb;
+        String[] acceptTypes = params.getAcceptTypes();
+        String mimeType = "*/*";
+        if (acceptTypes != null && acceptTypes.length > 0
+            && acceptTypes[0] != null && !acceptTypes[0].isEmpty()) {
+          mimeType = acceptTypes[0];
+        }
+        // ACTION_OPEN_DOCUMENT opens the system Files browser (Downloads,
+        // This device, Drive, etc). ACTION_GET_CONTENT with an image/* type
+        // gets intercepted by the Android Photo Picker instead, which is
+        // not what we want when the user is picking a saved chart file.
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType(mimeType);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+          startActivityForResult(i, FILE_CHOOSER_REQUEST);
+        } catch (Exception e) {
+          filePathCallback = null;
+          return false;
+        }
+        return true;
+      }
+    });
+
+    webView.loadUrl("file:///android_asset/index.html");
+  }
+
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == FILE_CHOOSER_REQUEST) {
+      if (filePathCallback == null) return;
+      Uri[] results = null;
+      if (resultCode == Activity.RESULT_OK && data != null) {
+        String dataStr = data.getDataString();
+        if (dataStr != null) results = new Uri[]{Uri.parse(dataStr)};
+      }
+      filePathCallback.onReceiveValue(results);
+      filePathCallback = null;
+    }
+  }
+
+  @Override
+  public void onBackPressed() {
+    if (webView.canGoBack()) webView.goBack();
+    else super.onBackPressed();
+  }
+
+  public class StorageBridge {
+    private final SharedPreferences prefs;
+    StorageBridge(Context ctx) {
+      prefs = ctx.getSharedPreferences("MosaicTrackerData", Context.MODE_PRIVATE);
+    }
+    @JavascriptInterface
+    public String get(String key) { return prefs.getString(key, null); }
+    @JavascriptInterface
+    public void set(String key, String value) {
+      prefs.edit().putString(key, value).apply();
+    }
+    @JavascriptInterface
+    public void remove(String key) { prefs.edit().remove(key).apply(); }
+  }
+
+  public class NativeBridge {
+    private final StorageBridge sb;
+    NativeBridge(Context ctx) { sb = new StorageBridge(ctx); }
+    @JavascriptInterface
+    public String getItem(String key) { return sb.get(key); }
+    @JavascriptInterface
+    public void setItem(String key, String value) { sb.set(key, value); }
+    @JavascriptInterface
+    public void removeItem(String key) { sb.remove(key); }
+  }
+}
+""")
+
+import shutil
+shutil.copy('index.html', 'app/src/main/assets/index.html')
+print("All files written.")
+PYEOF
+
+          gradle wrapper --gradle-version 8.2 --distribution-type bin
+          chmod +x gradlew
+
+      - name: Generate debug keystore
         run: |
-          cat > app/src/main/java/com/mosaictracker/MainActivity.java << 'EOF'
-          package com.mosaictracker;
-          import android.app.Activity;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.content.SharedPreferences;
-          import android.net.Uri;
-          import android.os.Bundle;
-          import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          public class MainActivity extends Activity {
-              private WebView webView;
-              private ValueCallback<Uri[]> filePathCallback;
-              private static final int FILE_CHOOSER_REQUEST = 1;
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  webView = new WebView(this);
-                  setContentView(webView);
-                  WebSettings s = webView.getSettings();
-                  s.setJavaScriptEnabled(true);
-                  s.setDomStorageEnabled(true);
-                  s.setAllowFileAccessFromFileURLs(true);
-                  s.setAllowUniversalAccessFromFileURLs(true);
-                  s.setBuiltInZoomControls(false);
-                  s.setLoadWithOverviewMode(true);
-                  s.setUseWideViewPort(true);
-                  webView.addJavascriptInterface(new StorageBridge(this), "storage");
-                  webView.setWebViewClient(new WebViewClient());
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> cb,
-                              FileChooserParams params) {
-                          if (filePathCallback != null) filePathCallback.onReceiveValue(null);
-                          filePathCallback = cb;
-                          Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                          intent.addCategory(Intent.CATEGORY_OPENABLE);
-                          intent.setType("image/*");
-                          startActivityForResult(Intent.createChooser(intent, "Choose image"),
-                                  FILE_CHOOSER_REQUEST);
-                          return true;
-                      }
-                  });
-                  webView.loadUrl("file:///android_asset/index.html");
-              }
-              @Override
-              protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-                  if (requestCode == FILE_CHOOSER_REQUEST) {
-                      Uri[] results = null;
-                      if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                          results = new Uri[]{ data.getData() };
-                      }
-                      if (filePathCallback != null) filePathCallback.onReceiveValue(results);
-                      filePathCallback = null;
-                  }
-              }
-              @Override
-              public void onBackPressed() {
-                  if (webView.canGoBack()) webView.goBack();
-                  else super.onBackPressed();
-              }
-              public class StorageBridge {
-                  private final SharedPreferences prefs;
-                  StorageBridge(Context ctx) {
-                      prefs = ctx.getSharedPreferences("MosaicTrackerData", Context.MODE_PRIVATE);
-                  }
-                  @JavascriptInterface
-                  public String get(String key) { return prefs.getString(key, null); }
-                  @JavascriptInterface
-                  public void set(String key, String value) {
-                      prefs.edit().putString(key, value).apply();
-                  }
-                  @JavascriptInterface
-                  public void remove(String key) { prefs.edit().remove(key).apply(); }
-              }
-          }
-          EOF
-
-      - name: Write AndroidManifest.xml
-        run: |
-          cat > app/src/main/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.mosaictracker">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-              <application
-                  android:label="Mosaic Tracker"
-                  android:icon="@mipmap/ic_launcher"
-                  android:roundIcon="@mipmap/ic_launcher"
-                  android:theme="@style/AppTheme"
-                  android:usesCleartextTraffic="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="portrait">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-      - name: Write res/values files
-        run: |
-          cat > app/src/main/res/values/themes.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
-                  <item name="android:windowBackground">#1a1a2e</item>
-                  <item name="android:statusBarColor">#1a1a2e</item>
-                  <item name="android:navigationBarColor">#1a1a2e</item>
-              </style>
-          </resources>
-          EOF
-
-      - name: Generate app icon
-        run: |
-          python3 - << 'EOF'
-          import struct, zlib, os
-
-          def make_png(size, r, g, b):
-              def chunk(tag, data):
-                  c = zlib.crc32(tag + data) & 0xffffffff
-                  return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', c)
-              sig = b'\x89PNG\r\n\x1a\n'
-              ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0))
-              raw = b''
-              for _ in range(size):
-                  row = b'\x00' + bytes([r, g, b] * size)
-                  raw += row
-              idat = chunk(b'IDAT', zlib.compress(raw))
-              iend = chunk(b'IEND', b'')
-              return sig + ihdr + idat + iend
-
-          icon = make_png(48, 233, 69, 96)
-          for d in ['mipmap-hdpi','mipmap-mdpi','mipmap-xhdpi','mipmap-xxhdpi']:
-              with open(f'app/src/main/res/{d}/ic_launcher.png','wb') as f:
-                  f.write(icon)
-          EOF
-
-      - name: Write Gradle files
-        run: |
-          cat > settings.gradle << 'EOF'
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
-          }
-          rootProject.name = "MosaicTracker"
-          include ':app'
-          EOF
-
-          cat > build.gradle << 'EOF'
-          plugins {
-              id 'com.android.application' version '8.2.0' apply false
-          }
-          EOF
-
-          cat > app/build.gradle << 'EOF'
-          plugins { id 'com.android.application' }
-          android {
-              namespace 'com.mosaictracker'
-              compileSdk 34
-              defaultConfig {
-                  applicationId "com.mosaictracker"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-              buildTypes {
-                  release { minifyEnabled false }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
-              }
-          }
-          EOF
-
-          cat > gradle.properties << 'EOF'
-          org.gradle.jvmargs=-Xmx2048m
-          android.useAndroidX=true
-          EOF
-
-      # ── Build ──────────────────────────────────────────────────────────
+          keytool -genkeypair -v \
+            -keystore debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Mosaic Tracker, OU=Dev, O=Daniel, L=Unknown, S=Unknown, C=US"
 
       - name: Build release APK
-        run: gradle assembleRelease --no-daemon
-
-      - name: Generate keystore
-        run: |
-          keytool -genkeypair \
-            -keystore mosaic-release.jks \
-            -alias mosaic \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass mosaic123 \
-            -keypass mosaic123 \
-            -dname "CN=Mosaic Tracker, O=dcheshirecat, C=US"
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Sign APK
         run: |
-          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
+          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
           $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
-            --ks mosaic-release.jks \
-            --ks-key-alias mosaic \
-            --ks-pass pass:mosaic123 \
-            --key-pass pass:mosaic123 \
-            --out app/build/outputs/apk/release/MosaicTracker-signed.apk \
+            --ks debug.keystore \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out mosaic-tracker.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MosaicTracker-release
-          path: app/build/outputs/apk/release/MosaicTracker-signed.apk
+          name: mosaic-tracker-apk
+          path: mosaic-tracker.apk
           retention-days: 30
