@@ -25,6 +25,7 @@
   #nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
   #nav h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; }
   #nav-back { display: none; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
+  #btn-settings { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 4px 8px; width: 40px; }
 
   /* ── SCREENS ── */
   .screen { display: none; padding: 16px; }
@@ -139,10 +140,15 @@
   #chart-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 
   /* grid chart (pdf-imported) */
-  #chart-grid-wrap { width: 100%; overflow: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; background: var(--bg); }
-  #chart-grid-canvas { display: block; touch-action: pan-x pan-y; }
-  #chart-ruler-wrap { width: 100%; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
+  #chart-ruler-row { display: flex; }
+  #chart-corner-spacer { width: 30px; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  #chart-ruler-wrap { flex: 1; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
   #chart-ruler-canvas { display: block; }
+  #chart-grid-row { display: flex; }
+  #chart-row-ruler-wrap { width: 30px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-right: 1px solid var(--border); max-height: 60vh; }
+  #chart-row-ruler-canvas { display: block; }
+  #chart-grid-wrap { flex: 1; min-width: 0; overflow: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; background: var(--bg); }
+  #chart-grid-canvas { display: block; touch-action: pan-x pan-y; }
   #fix-chart-hint { font-size: 0.76rem; color: var(--accent); padding: 6px 12px; display: none; }
   #fix-chart-hint.show { display: block; }
 
@@ -175,13 +181,45 @@
 <div id="nav">
   <button id="nav-back">&#8592;</button>
   <h1>🧶 Mosaic Tracker</h1>
-  <div style="width:40px"></div>
+  <button id="btn-settings" title="Settings">⚙️</button>
 </div>
 
 <div id="screen-list" class="screen active">
   <button id="btn-new">+ New Project</button>
   <div id="project-list"></div>
   <div id="empty-state">No projects yet.<br>Tap above to add your first blanket.</div>
+</div>
+
+<div id="screen-settings" class="screen">
+  <p class="section-title">Display</p>
+  <div class="form-group">
+    <label class="toggle-label" for="s-windowed-view">
+      <input type="checkbox" id="s-windowed-view">
+      Windowed chart view by default
+    </label>
+    <div class="hint">Shows a fixed number of stitches at a time instead of the whole row width — handy for wide charts on a small screen.</div>
+  </div>
+  <div class="form-group">
+    <label>Stitches shown per window</label>
+    <input type="number" id="s-window-size" min="4" max="60">
+  </div>
+
+  <p class="section-title">Appearance</p>
+  <div class="form-group">
+    <label>App Accent Color</label>
+    <div class="color-row">
+      <button type="button" class="color-swatch-btn" id="f-color-theme-swatch" style="background:#e94560"></button>
+      <div class="color-picker-pop" id="picker-pop-theme">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-theme" style="background:#e94560"></div>
+          <input type="text" id="f-color-theme-hex-input" value="#e94560" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <div class="color-picker-presets" id="presets-theme"></div>
+      </div>
+      <button type="button" class="btn-small" id="btn-theme-reset">Reset</button>
+    </div>
+    <div class="hint">Changes the app's highlight color used for buttons, the current row, and progress indicators.</div>
+  </div>
 </div>
 
 <div id="screen-form" class="screen">
@@ -363,11 +401,19 @@
       <div id="chart-overlay"></div>
       <div id="no-chart">No chart uploaded for this project.</div>
     </div>
-    <div id="chart-ruler-wrap" style="display:none">
-      <canvas id="chart-ruler-canvas"></canvas>
+    <div id="chart-ruler-row" style="display:none">
+      <div id="chart-corner-spacer"></div>
+      <div id="chart-ruler-wrap">
+        <canvas id="chart-ruler-canvas"></canvas>
+      </div>
     </div>
-    <div id="chart-grid-wrap" style="display:none">
-      <canvas id="chart-grid-canvas"></canvas>
+    <div id="chart-grid-row" style="display:none">
+      <div id="chart-row-ruler-wrap">
+        <canvas id="chart-row-ruler-canvas"></canvas>
+      </div>
+      <div id="chart-grid-wrap">
+        <canvas id="chart-grid-canvas"></canvas>
+      </div>
     </div>
   </div>
 
@@ -376,11 +422,47 @@
 
 <div id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// Load pdf.js from the locally-bundled copy first (works fully offline,
+// which is the whole point on a phone with no signal) and only reach out
+// to the CDN if that's missing — e.g. running index.html standalone in a
+// browser during development, outside the APK where build.yml bundles
+// vendor/pdf.min.js + vendor/pdf.worker.min.js as assets.
+const PDFJS_LOCAL = { lib: 'vendor/pdf.min.js', worker: 'vendor/pdf.worker.min.js' };
+const PDFJS_CDN = {
+  lib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+};
+let pdfjsWorkerSrc = null; // set once we know which copy actually loaded
+let pdfjsReady = null; // promise, resolves true/false
+
+function loadScriptTag(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('failed to load ' + src));
+    document.head.appendChild(s);
+  });
 }
+
+pdfjsReady = (async () => {
+  try {
+    await loadScriptTag(PDFJS_LOCAL.lib);
+    pdfjsWorkerSrc = PDFJS_LOCAL.worker;
+    return true;
+  } catch {
+    // local bundle missing (e.g. dev preview outside the APK) — fall back
+    // to the CDN copy so the feature still works when online
+    try {
+      await loadScriptTag(PDFJS_CDN.lib);
+      pdfjsWorkerSrc = PDFJS_CDN.worker;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+})();
 
 // ── STORAGE ──────────────────────────────────────────────────────────────
 const store = {
@@ -407,16 +489,23 @@ let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
 let gridCellSize = 10; // px, adjustable via zoom buttons
-let settings = { windowedView: false, windowSize: 10 }; // app-wide viewing preferences
+let settings = { windowedView: false, windowSize: 10, accentColor: '#e94560' }; // app-wide viewing preferences
 const STITCH_WINDOW = 10; // default "N stitches at a time" view width, in columns
+const DEFAULT_ACCENT = '#e94560';
 
 async function loadSettings() {
   const raw = await store.get('mc_settings');
   if (raw) {
     try { settings = Object.assign(settings, JSON.parse(raw)); } catch {}
   }
+  applyAccentColor(settings.accentColor || DEFAULT_ACCENT);
 }
 async function saveSettings() { await store.set('mc_settings', JSON.stringify(settings)); }
+
+function applyAccentColor(hex) {
+  document.documentElement.style.setProperty('--accent', hex);
+  setColorPickerValue('theme', hex);
+}
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -451,6 +540,7 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
   document.getElementById('nav-back').style.display = id === 'list' ? 'none' : 'block';
+  document.getElementById('btn-settings').style.display = id === 'list' ? 'block' : 'none';
 }
 
 // ── PROJECT LIST ──────────────────────────────────────────────────────────
@@ -514,7 +604,8 @@ const COLOR_PRESETS = [
   '#8e44ad', '#c2185b', '#795548', '#5d4037', '#d2691e', '#b0c4de',
   '#ffd1dc', '#98d8c8', '#f6c90e', '#6a5acd', '#2c2c54', '#c0c0c0'
 ];
-const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f' };
+const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f', theme: '#e94560' };
+const COLOR_PICKER_KEYS = ['a', 'b', 'theme'];
 
 function isValidHex(v) { return /^#?[0-9a-fA-F]{6}$/.test(v || ''); }
 function normalizeHex(v) { v = v.trim(); if (!v.startsWith('#')) v = '#' + v; return v.toLowerCase(); }
@@ -530,12 +621,12 @@ function buildColorPresets(key) {
     b.addEventListener('click', () => {
       setColorPickerValue(key, hex);
       document.getElementById('picker-pop-' + key).classList.remove('open');
+      if (key === 'theme') applyThemeChange(hex);
     });
     wrap.appendChild(b);
   });
 }
-buildColorPresets('a');
-buildColorPresets('b');
+COLOR_PICKER_KEYS.forEach(buildColorPresets);
 
 function setColorPickerValue(key, hex) {
   hex = isValidHex(hex) ? normalizeHex(hex) : colorPickerState[key];
@@ -549,15 +640,28 @@ function setColorPickerValue(key, hex) {
 }
 function getColorPickerValue(key) { return colorPickerState[key]; }
 
-['a', 'b'].forEach(key => {
+// Persist + live-apply the app accent color as soon as it changes, rather
+// than only on some separate "save" action — Settings isn't a form you
+// submit, changes should stick immediately.
+function applyThemeChange(hex) {
+  settings.accentColor = hex;
+  applyAccentColor(hex);
+  saveSettings();
+}
+
+COLOR_PICKER_KEYS.forEach(key => {
   document.getElementById('f-color-' + key + '-swatch').addEventListener('click', () => {
-    const otherKey = key === 'a' ? 'b' : 'a';
-    document.getElementById('picker-pop-' + otherKey).classList.remove('open');
+    COLOR_PICKER_KEYS.filter(k => k !== key).forEach(k => {
+      document.getElementById('picker-pop-' + k).classList.remove('open');
+    });
     document.getElementById('picker-pop-' + key).classList.toggle('open');
   });
   const hexInput = document.getElementById('f-color-' + key + '-hex-input');
   hexInput.addEventListener('input', e => {
-    if (isValidHex(e.target.value)) setColorPickerValue(key, e.target.value);
+    if (isValidHex(e.target.value)) {
+      setColorPickerValue(key, e.target.value);
+      if (key === 'theme') applyThemeChange(colorPickerState.theme);
+    }
   });
   hexInput.addEventListener('blur', e => {
     if (!isValidHex(e.target.value)) {
@@ -567,7 +671,7 @@ function getColorPickerValue(key) { return colorPickerState[key]; }
   });
 });
 document.addEventListener('click', e => {
-  ['a', 'b'].forEach(key => {
+  COLOR_PICKER_KEYS.forEach(key => {
     const pop = document.getElementById('picker-pop-' + key);
     const swatch = document.getElementById('f-color-' + key + '-swatch');
     if (pop.classList.contains('open') && !pop.contains(e.target) && e.target !== swatch) {
@@ -575,6 +679,14 @@ document.addEventListener('click', e => {
     }
   });
 });
+
+document.getElementById('btn-theme-reset').addEventListener('click', () => {
+  const DEFAULT_ACCENT = '#e94560';
+  setColorPickerValue('theme', DEFAULT_ACCENT);
+  applyThemeChange(DEFAULT_ACCENT);
+  toast('Accent color reset');
+});
+
 
 function openForm(id = null) {
   editingId = id;
@@ -694,7 +806,9 @@ let cropPoints = []; // in on-screen crop-canvas pixel coords
 let cropDisplayScale = 1; // ratio: fullRes px per displayed px
 
 async function startPdfImport(file) {
-  if (!window.pdfjsLib) { toast('PDF engine not loaded — check your internet connection'); return; }
+  const ok = await pdfjsReady;
+  if (!ok || !window.pdfjsLib) { toast('PDF engine unavailable — try reinstalling the app, or check your internet connection'); return; }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc;
   showScreen('crop');
   document.getElementById('crop-loading').style.display = '';
   document.getElementById('crop-canvas-wrap').style.display = 'none';
@@ -975,14 +1089,14 @@ function renderTracker() {
 
   if (isGrid) {
     document.getElementById('chart-wrap').style.display = 'none';
-    document.getElementById('chart-grid-wrap').style.display = '';
-    document.getElementById('chart-ruler-wrap').style.display = '';
+    document.getElementById('chart-grid-row').style.display = '';
+    document.getElementById('chart-ruler-row').style.display = '';
     document.getElementById('btn-window-view').style.display = '';
     syncWindowViewUI();
     renderChartGrid(p);
   } else {
-    document.getElementById('chart-grid-wrap').style.display = 'none';
-    document.getElementById('chart-ruler-wrap').style.display = 'none';
+    document.getElementById('chart-grid-row').style.display = 'none';
+    document.getElementById('chart-ruler-row').style.display = 'none';
     document.getElementById('chart-wrap').style.display = '';
     document.getElementById('btn-window-view').style.display = 'none';
     renderChart(p);
@@ -1063,7 +1177,11 @@ function renderChartGrid(p) {
       const x = (c - colStart) * cs;
       ctx.fillRect(x, y, cs, cs);
       if (isDone(r, c)) {
-        ctx.fillStyle = 'rgba(20,20,30,0.6)';
+        // A flat, fairly opaque mid-grey wash reads clearly as "greyed
+        // out / done" regardless of the cell's underlying color — a dark
+        // tint alone looked more like a shadow than a completed-stitch
+        // marker, especially on already-dark Color B cells.
+        ctx.fillStyle = 'rgba(130,134,142,0.78)';
         ctx.fillRect(x, y, cs, cs);
       }
     }
@@ -1178,6 +1296,7 @@ function renderChartGrid(p) {
   } : null;
 
   renderChartRuler(g, cs, colStart, colEnd);
+  renderChartRowRuler(g, cs);
 
   // keep current row scrolled into view (vertical only — the windowed
   // view already fits horizontally, and full view scrolls horizontally
@@ -1217,10 +1336,49 @@ function renderChartRuler(g, cs, colStart, colEnd) {
   }
 }
 
-// Mirror horizontal scroll of the grid onto the sticky ruler above it.
+// Row ruler along the left edge of the grid: every row is labeled with its
+// actual row number (row 1 = bottom of chart = last canvas row, matching
+// how Stitch Fiddle itself numbers rows), so you can always tell exactly
+// which row you're looking at without counting cells. At very small cell
+// sizes (zoomed far out) every label won't fit, so it thins out to every
+// 5th/10th row automatically to stay readable.
+function renderChartRowRuler(g, cs) {
+  const canvas = document.getElementById('chart-row-ruler-canvas');
+  const W = 30;
+  canvas.width = W;
+  canvas.height = g.rows * cs;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, canvas.height);
+  ctx.fillStyle = '#8892a4';
+  ctx.font = `${Math.min(11, Math.max(8, cs * 0.55))}px sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(136,146,164,0.6)';
+  ctx.lineWidth = 1;
+
+  // label every row if there's room, otherwise every 5th, otherwise every 10th
+  const minLabelSpacing = 14; // px needed to keep numbers from overlapping
+  const step = cs >= minLabelSpacing ? 1 : (cs * 5 >= minLabelSpacing ? 5 : 10);
+
+  for (let r = 0; r < g.rows; r++) {
+    const rowNum = g.rows - r;
+    if (rowNum % step !== 0 && rowNum !== 1 && rowNum !== g.rows) continue;
+    const y = r * cs + cs / 2;
+    ctx.beginPath();
+    ctx.moveTo(W - 6, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+    ctx.fillText(String(rowNum), W - 9, y);
+  }
+}
+
+// Mirror horizontal scroll of the grid onto the sticky ruler above it, and
+// vertical scroll onto the row-number ruler beside it.
 document.getElementById('chart-grid-wrap').addEventListener('scroll', (e) => {
   document.getElementById('chart-ruler-canvas').style.transform = `translateX(-${e.target.scrollLeft}px)`;
+  document.getElementById('chart-row-ruler-canvas').style.transform = `translateY(-${e.target.scrollTop}px)`;
 });
+
 
 
 document.getElementById('btn-zoom-in').addEventListener('click', () => {
@@ -1353,15 +1511,37 @@ document.getElementById('stitch-minus').addEventListener('click', () => {
 // ── EDIT ──────────────────────────────────────────────────────────────────
 document.getElementById('btn-edit-project').addEventListener('click', () => openForm(activeId));
 
+// ── SETTINGS SCREEN ──────────────────────────────────────────────────────
+document.getElementById('btn-settings').addEventListener('click', () => {
+  document.getElementById('s-windowed-view').checked = !!settings.windowedView;
+  document.getElementById('s-window-size').value = settings.windowSize || STITCH_WINDOW;
+  showScreen('settings');
+});
+document.getElementById('s-windowed-view').addEventListener('change', e => {
+  settings.windowedView = e.target.checked;
+  saveSettings();
+  syncWindowViewUI();
+});
+document.getElementById('s-window-size').addEventListener('change', e => {
+  const v = parseInt(e.target.value);
+  settings.windowSize = (v && v >= 4) ? v : STITCH_WINDOW;
+  e.target.value = settings.windowSize;
+  saveSettings();
+});
+
 // ── BACK NAV ─────────────────────────────────────────────────────────────
 document.getElementById('nav-back').addEventListener('click', () => {
   const fs = document.getElementById('screen-form');
   const cs = document.getElementById('screen-crop');
+  const ss = document.getElementById('screen-settings');
   if (cs.classList.contains('active')) {
     pdfDoc = null;
     showScreen('form');
   } else if (fs.classList.contains('active')) {
     editingId ? openTracker(editingId) : showScreen('list');
+  } else if (ss.classList.contains('active')) {
+    showScreen('list');
+    renderList();
   } else {
     showScreen('list');
     renderList();
