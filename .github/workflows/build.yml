@@ -183,10 +183,11 @@ public class MainActivity extends AppCompatActivity {
           FileChooserParams params) {
         filePathCallback = cb;
         String[] acceptTypes = params.getAcceptTypes();
-        String mimeType = "*/*";
-        if (acceptTypes != null && acceptTypes.length > 0
-            && acceptTypes[0] != null && !acceptTypes[0].isEmpty()) {
-          mimeType = acceptTypes[0];
+        java.util.List<String> mimeList = new java.util.ArrayList<>();
+        if (acceptTypes != null) {
+          for (String t : acceptTypes) {
+            if (t != null && !t.isEmpty() && !t.equals("*/*")) mimeList.add(t);
+          }
         }
         // ACTION_OPEN_DOCUMENT opens the system Files browser (Downloads,
         // This device, Drive, etc). ACTION_GET_CONTENT with an image/* type
@@ -194,7 +195,18 @@ public class MainActivity extends AppCompatActivity {
         // not what we want when the user is picking a saved chart file.
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType(mimeType);
+        // Always set the base type to */* and narrow via EXTRA_MIME_TYPES.
+        // Passing a specific type (e.g. "application/pdf") directly to
+        // setType() makes some OEM document pickers only surface providers
+        // that explicitly advertise that exact type, which in practice
+        // often collapses the chooser down to just the Photos view. Using
+        // */* + EXTRA_MIME_TYPES is the pattern Android itself recommends
+        // for filtering by type while still showing every provider
+        // (Drive, Downloads, Files, WhatsApp, etc).
+        i.setType("*/*");
+        if (!mimeList.isEmpty()) {
+          i.putExtra(Intent.EXTRA_MIME_TYPES, mimeList.toArray(new String[0]));
+        }
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
           startActivityForResult(i, FILE_CHOOSER_REQUEST);
