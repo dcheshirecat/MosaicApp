@@ -14,23 +14,21 @@
     --text: #eaeaea;
     --muted: #8892a4;
     --border: #2a3a5c;
-    --row-hi: rgba(233,69,96,0.25);
     --success: #4ecca3;
-    font-size: 16px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; min-height: 100vh; overflow-x: hidden; }
 
-  /* ── NAV ── */
+  /* NAV */
   #nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
   #nav h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; }
   #nav-back { display: none; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
 
-  /* ── SCREENS ── */
+  /* SCREENS */
   .screen { display: none; padding: 16px; }
   .screen.active { display: block; }
 
-  /* ── PROJECT LIST ── */
+  /* PROJECT LIST */
   #btn-new { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; letter-spacing: 0.04em; margin-bottom: 20px; }
   .project-card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 14px; cursor: pointer; border: 1px solid var(--border); transition: border-color 0.15s; }
   .project-card:active { border-color: var(--accent); }
@@ -43,7 +41,7 @@
   .project-del { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
   #empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
 
-  /* ── FORMS ── */
+  /* FORMS */
   .form-group { margin-bottom: 16px; }
   label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
   input[type=text], input[type=number] { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; color: var(--text); font-size: 1rem; font-family: inherit; outline: none; }
@@ -55,12 +53,14 @@
   .btn-secondary { width: 100%; padding: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
   .section-title { font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; margin-top: 4px; }
 
-  /* ── IMAGE UPLOAD ── */
-  #upload-area { width: 100%; min-height: 90px; background: var(--card); border: 2px dashed var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; position: relative; }
-  #upload-area.has-img { border-style: solid; border-color: var(--success); color: var(--success); }
-  #chart-file { display: none; }
+  /* PDF UPLOAD */
+  .upload-zone { width: 100%; min-height: 80px; background: var(--card); border: 2px dashed var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; }
+  .upload-zone.has-data { border-style: solid; border-color: var(--success); color: var(--success); }
+  .upload-zone.error { border-color: var(--accent); color: var(--accent); }
+  #pdf-file { display: none; }
+  #parse-status { font-size: 0.8rem; color: var(--muted); margin-top: 6px; min-height: 18px; }
 
-  /* ── TRACKER ── */
+  /* TRACKER */
   #tracker-header { margin-bottom: 14px; }
   #tracker-name { font-size: 1.3rem; font-weight: bold; font-style: italic; }
   #tracker-subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
@@ -71,7 +71,7 @@
   .color-half.inactive { opacity: 0.35; }
   .color-half span { background: rgba(0,0,0,0.35); border-radius: 6px; padding: 3px 8px; }
 
-  /* row + stitch counters */
+  /* counters */
   #counters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
   .counter-card { background: var(--card); border-radius: 12px; padding: 14px 12px; text-align: center; border: 1px solid var(--border); }
   .counter-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
@@ -82,16 +82,18 @@
   .btn-minus { background: var(--border); color: var(--text); }
   .btn-plus { background: var(--accent); color: #fff; }
 
-  /* chart */
+  /* NATIVE CHART */
   #chart-section { background: var(--card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
-  #chart-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px 6px; }
-  #chart-wrap { position: relative; width: 100%; overflow: hidden; touch-action: none; }
-  #chart-img { width: 100%; display: block; user-select: none; -webkit-user-select: none; }
-  #chart-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
-  #no-chart { padding: 20px; text-align: center; color: var(--muted); font-size: 0.88rem; font-style: italic; }
+  #chart-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px 6px; display: flex; justify-content: space-between; align-items: center; }
+  #chart-hint { font-size: 0.7rem; color: var(--muted); font-style: italic; }
+  #chart-viewport { width: 100%; height: 340px; overflow: hidden; position: relative; touch-action: none; cursor: grab; }
+  #chart-viewport.grabbing { cursor: grabbing; }
+  #chart-canvas { position: absolute; top: 0; left: 0; image-rendering: pixelated; }
+  #no-chart { padding: 30px 20px; text-align: center; color: var(--muted); font-size: 0.88rem; font-style: italic; line-height: 1.6; }
 
-  /* row highlight canvas */
-  #chart-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  /* mosaic note */
+  #mosaic-note { background: var(--surface); border-left: 3px solid var(--accent2); border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+  #mosaic-note strong { color: var(--text); }
 
   /* edit btn */
   #btn-edit-project { width: 100%; padding: 11px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; cursor: pointer; margin-bottom: 8px; }
@@ -99,10 +101,6 @@
   /* toast */
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 20px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 999; white-space: nowrap; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-  /* mosaic note */
-  #mosaic-note { background: var(--surface); border-left: 3px solid var(--accent2); border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
-  #mosaic-note strong { color: var(--text); }
 </style>
 </head>
 <body>
@@ -113,25 +111,19 @@
   <div style="width:40px"></div>
 </div>
 
+<!-- LIST -->
 <div id="screen-list" class="screen active">
   <button id="btn-new">+ New Project</button>
   <div id="project-list"></div>
   <div id="empty-state">No projects yet.<br>Tap above to add your first blanket.</div>
 </div>
 
+<!-- FORM -->
 <div id="screen-form" class="screen">
   <p class="section-title" id="form-title">New Project</p>
   <div class="form-group">
     <label>Project Name</label>
     <input type="text" id="f-name" placeholder="e.g. Winter Blanket">
-  </div>
-  <div class="form-group">
-    <label>Total Rows in Chart</label>
-    <input type="number" id="f-rows" placeholder="e.g. 60" min="1">
-  </div>
-  <div class="form-group">
-    <label>Stitches per Row</label>
-    <input type="number" id="f-stitches" placeholder="e.g. 120" min="1">
   </div>
   <div class="form-group">
     <label>Color A (first color)</label>
@@ -148,16 +140,32 @@
     </div>
   </div>
   <div class="form-group">
-    <label>Stitch Fiddle Chart (optional)</label>
-    <div id="upload-area">
-      <span id="upload-label">Tap to upload chart image</span>
+    <label>Stitch Fiddle PDF Chart</label>
+    <div class="upload-zone" id="pdf-upload-area">
+      <span id="pdf-upload-label">Tap to upload PDF from Stitch Fiddle</span>
     </div>
-    <input type="file" id="chart-file" accept="image/*">
+    <input type="file" id="pdf-file" accept="application/pdf,.pdf">
+    <div id="parse-status"></div>
   </div>
+  <div class="form-group" id="manual-override-group" style="display:none">
+    <label>Or enter manually (if no PDF)</label>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1">
+        <label>Total Rows</label>
+        <input type="number" id="f-rows" placeholder="e.g. 186" min="1">
+      </div>
+      <div style="flex:1">
+        <label>Stitches/Row</label>
+        <input type="number" id="f-stitches" placeholder="e.g. 201" min="1">
+      </div>
+    </div>
+  </div>
+  <button class="btn-secondary" id="btn-toggle-manual" style="margin-top:0;margin-bottom:8px;">Enter row/stitch count manually instead</button>
   <button class="btn-primary" id="btn-save-project">Save Project</button>
   <button class="btn-secondary" id="btn-cancel-form">Cancel</button>
 </div>
 
+<!-- TRACKER -->
 <div id="screen-tracker" class="screen">
   <div id="tracker-header">
     <div id="tracker-name"></div>
@@ -171,6 +179,19 @@
 
   <div id="mosaic-note">
     <strong>Mosaic ADC reminder:</strong> Rows 1–2 = Color A &nbsp;·&nbsp; Rows 3–4 = Color B, alternating every 2 rows. Right-side rows use anchored double crochet for floats.
+  </div>
+
+  <div id="reversible-row" style="display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+    <div>
+      <div style="font-size:0.88rem;font-weight:bold;">⚓ Reversible pattern</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">Shows ADC anchors above each DC stitch</div>
+    </div>
+    <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;">
+      <input type="checkbox" id="toggle-reversible" style="opacity:0;width:0;height:0;">
+      <span id="toggle-track" style="position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:24px;transition:background 0.2s;">
+        <span id="toggle-thumb" style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform 0.2s;display:block;"></span>
+      </span>
+    </label>
   </div>
 
   <div id="counters">
@@ -195,12 +216,13 @@
   </div>
 
   <div id="chart-section">
-    <div id="chart-label">Chart — tap a row to jump</div>
-    <div id="chart-wrap">
-      <img id="chart-img" style="display:none">
+    <div id="chart-label">
+      <span>Chart</span>
+      <span id="chart-hint">Pinch to zoom · drag to pan · tap row to jump</span>
+    </div>
+    <div id="chart-viewport">
       <canvas id="chart-canvas"></canvas>
-      <div id="chart-overlay"></div>
-      <div id="no-chart">No chart uploaded for this project.</div>
+      <div id="no-chart">No chart imported yet.<br>Edit the project to upload a Stitch Fiddle PDF.</div>
     </div>
   </div>
 
@@ -210,59 +232,126 @@
 <div id="toast"></div>
 
 <script>
-// ── STORAGE ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// STORAGE
+// ─────────────────────────────────────────────────────────────────────────────
 const store = {
-  async get(k) {
-    try {
-      if (window.storage) { return window.storage.get(k); }
-      return localStorage.getItem(k);
-    } catch { return localStorage.getItem(k); }
+  get(k) {
+    try { if (window.storage) return window.storage.get(k); return localStorage.getItem(k); }
+    catch { return localStorage.getItem(k); }
   },
-  async set(k, v) {
-    try {
-      if (window.storage) { window.storage.set(k, v); return; }
-      localStorage.setItem(k, v);
-    } catch { localStorage.setItem(k, v); }
+  set(k, v) {
+    try { if (window.storage) { window.storage.set(k, v); return; } localStorage.setItem(k, v); }
+    catch { localStorage.setItem(k, v); }
   }
 };
 
-// ── STATE ─────────────────────────────────────────────────────────────────
-let projects = [];   // array of project objects
-let editingId = null; // null = new, else project id
-let activeId = null;  // currently open tracker
-let pendingImageData = null; // base64 for new upload
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF PARSER
+// Stitch Fiddle text-layer format:
+//   Key line:  $ = Color A stitch, % = Color B stitch (row-start markers)
+//   Row line:  %# <content> #%  or  $" <content> "$
+//   Content chars: ! = DC (pattern stitch), space = SC/background
+//   Border:    # and " are border stitches (ignored for pattern)
+//   Chain row: $&&&&...$ (bottom border, skip)
+// ─────────────────────────────────────────────────────────────────────────────
+function parseStitchFiddlePDF(text) {
+  const lines = text.split('\n').map(l => l.trim());
 
-// ── HELPERS ───────────────────────────────────────────────────────────────
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-function toast(msg, ms = 1800) {
+  // Detect the symbol map from the key section
+  // Default fallback: $ = A, % = B, ! = pattern stitch
+  let colorAChar = '$';
+  let colorBChar = '%';
+  let patternChar = '!';
+
+  // Row lines follow the pattern: starts with one of the two color chars
+  // followed by a border char, then content, then border, then other color char
+  // We collect them in order from top of file (which = highest row number)
+  const rowLines = [];
+
+  for (const line of lines) {
+    if (!line) continue;
+    // Skip chain row (all & or starts with $&)
+    if (/^[$%][&]+[$%]?$/.test(line)) continue;
+    // Skip page markers and metadata
+    if (line.startsWith('Designed') || line.startsWith('1000') || /^\d+$/.test(line) || /^\d+ \d+$/.test(line)) continue;
+
+    // A pattern row: starts with $ or % and ends with $ or % and contains the opposite
+    // Format is like: %# !!!!! #%  or  $" !! "$
+    if ((line.startsWith('$') || line.startsWith('%')) &&
+        (line.endsWith('$') || line.endsWith('%')) &&
+        line.length >= 4) {
+
+      const startColor = line[0];        // which color starts this row
+      // Strip the two border chars at each end: first char + border + ... + border + last char
+      // Pattern: <colorChar><borderChar> <content> <borderChar><colorChar>
+      const inner = line.slice(2, -2);   // remove outer frame chars
+      const stitches = [];
+      for (const ch of inner) {
+        if (ch === patternChar) {
+          // DC stitch — color is the OPPOSITE of the row color (mosaic rule)
+          stitches.push({ color: startColor === colorAChar ? 'B' : 'A', isDC: true });
+        } else if (ch === ' ') {
+          // SC background — color matches the row color
+          stitches.push({ color: startColor === colorAChar ? 'A' : 'B', isDC: false });
+        }
+        // skip border chars that leaked in
+      }
+      if (stitches.length > 0) rowLines.push({ startColor, stitches });
+    }
+  }
+
+  if (rowLines.length === 0) return null;
+
+  // PDF is top-to-bottom = row N down to row 1
+  // Reverse so index 0 = row 1
+  rowLines.reverse();
+
+  const totalRows = rowLines.length;
+  const stitches = Math.max(...rowLines.map(r => r.stitches.length));
+
+  return { totalRows, stitches, rows: rowLines.map(r => r.stitches) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let projects = [];
+let editingId = null;
+let activeId = null;
+let pendingChartData = null; // { totalRows, stitches, rows[] } from PDF parse
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function toast(msg, ms=1800) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), ms);
 }
-function activeColor(row) {
-  // mosaic: 2 rows per color, starts with A
-  return Math.floor((row - 1) / 2) % 2 === 0 ? 'A' : 'B';
-}
-function isRightSide(row) { return row % 2 === 1; } // odd = RS in standard mosaic
+function activeColor(row) { return Math.floor((row-1)/2) % 2 === 0 ? 'A' : 'B'; }
+function isRightSide(row) { return row % 2 === 1; }
 
-// ── PERSISTENCE ──────────────────────────────────────────────────────────
-async function loadAll() {
-  const raw = await store.get('mc_projects');
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSISTENCE
+// ─────────────────────────────────────────────────────────────────────────────
+function loadAll() {
+  const raw = store.get('mc_projects');
   projects = raw ? JSON.parse(raw) : [];
 }
-async function saveAll() {
-  await store.set('mc_projects', JSON.stringify(projects));
-}
+function saveAll() { store.set('mc_projects', JSON.stringify(projects)); }
 function getProject(id) { return projects.find(p => p.id === id); }
 
-// ── SCREENS ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SCREENS
+// ─────────────────────────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
   document.getElementById('nav-back').style.display = id === 'list' ? 'none' : 'block';
 }
 
-// ── PROJECT LIST ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT LIST
+// ─────────────────────────────────────────────────────────────────────────────
 function renderList() {
   const list = document.getElementById('project-list');
   const empty = document.getElementById('empty-state');
@@ -272,7 +361,8 @@ function renderList() {
   projects.forEach(p => {
     const card = document.createElement('div');
     card.className = 'project-card';
-    const pct = Math.round(((p.currentRow - 1) / p.totalRows) * 100);
+    const pct = Math.round(((p.currentRow-1) / p.totalRows) * 100);
+    const hasChart = p.chartRows && p.chartRows.length > 0;
     card.innerHTML = `
       <div class="project-swatches">
         <div class="swatch" style="background:${p.colorAHex}"></div>
@@ -280,91 +370,175 @@ function renderList() {
       </div>
       <div class="project-info">
         <div class="project-name">${p.name}</div>
-        <div class="project-meta">${p.stitches} sts · ${p.totalRows} rows</div>
-        <div class="project-progress">Row ${p.currentRow} / ${p.totalRows} &nbsp;·&nbsp; ${pct}%</div>
+        <div class="project-meta">${p.stitches} sts · ${p.totalRows} rows${hasChart ? ' · 📊 chart' : ''}</div>
+        <div class="project-progress">Row ${p.currentRow} / ${p.totalRows} · ${pct}%</div>
       </div>
-      <button class="project-del" data-id="${p.id}" title="Delete">🗑</button>`;
+      <button class="project-del" data-id="${p.id}">🗑</button>`;
     card.querySelector('.project-del').addEventListener('click', e => {
       e.stopPropagation();
-      if (confirm(`Delete "${p.name}"?`)) {
-        projects = projects.filter(x => x.id !== p.id);
-        saveAll(); renderList();
-      }
+      if (confirm(`Delete "${p.name}"?`)) { projects = projects.filter(x => x.id !== p.id); saveAll(); renderList(); }
     });
     card.addEventListener('click', () => openTracker(p.id));
     list.appendChild(card);
   });
 }
 
-// ── FORM ──────────────────────────────────────────────────────────────────
-function openForm(id = null) {
+// ─────────────────────────────────────────────────────────────────────────────
+// FORM
+// ─────────────────────────────────────────────────────────────────────────────
+let manualMode = false;
+
+function openForm(id=null) {
   editingId = id;
-  pendingImageData = null;
+  pendingChartData = null;
+  manualMode = false;
   const p = id ? getProject(id) : null;
   document.getElementById('form-title').textContent = id ? 'Edit Project' : 'New Project';
   document.getElementById('f-name').value = p ? p.name : '';
-  document.getElementById('f-rows').value = p ? p.totalRows : '';
-  document.getElementById('f-stitches').value = p ? p.stitches : '';
   document.getElementById('f-color-a-name').value = p ? p.colorAName : '';
   document.getElementById('f-color-a-hex').value = p ? p.colorAHex : '#f5e6c8';
   document.getElementById('f-color-b-name').value = p ? p.colorBName : '';
   document.getElementById('f-color-b-hex').value = p ? p.colorBHex : '#2a7f7f';
-  const ul = document.getElementById('upload-label');
-  ul.textContent = (p && p.chartImage) ? '✓ Chart uploaded (tap to replace)' : 'Tap to upload chart image';
-  document.getElementById('upload-area').className = (p && p.chartImage) ? 'has-img' : '';
+  document.getElementById('f-rows').value = p ? p.totalRows : '';
+  document.getElementById('f-stitches').value = p ? p.stitches : '';
+  document.getElementById('parse-status').textContent = p && p.chartRows ? `✓ Chart loaded (${p.totalRows} rows × ${p.stitches} sts)` : '';
+  const ua = document.getElementById('pdf-upload-area');
+  ua.className = 'upload-zone' + (p && p.chartRows ? ' has-data' : '');
+  document.getElementById('pdf-upload-label').textContent = p && p.chartRows ? '✓ Chart imported — tap to replace' : 'Tap to upload PDF from Stitch Fiddle';
+  document.getElementById('manual-override-group').style.display = 'none';
+  document.getElementById('btn-toggle-manual').textContent = 'Enter row/stitch count manually instead';
   showScreen('form');
 }
 
-document.getElementById('upload-area').addEventListener('click', () => {
-  document.getElementById('chart-file').click();
-});
-document.getElementById('chart-file').addEventListener('change', e => {
+document.getElementById('pdf-upload-area').addEventListener('click', () => document.getElementById('pdf-file').click());
+
+document.getElementById('pdf-file').addEventListener('change', async e => {
   const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    pendingImageData = ev.target.result;
-    document.getElementById('upload-label').textContent = '✓ ' + file.name;
-    document.getElementById('upload-area').className = 'has-img';
-  };
-  reader.readAsDataURL(file);
+  const status = document.getElementById('parse-status');
+  const ua = document.getElementById('pdf-upload-area');
+  const label = document.getElementById('pdf-upload-label');
+  status.textContent = 'Reading PDF…';
+  ua.className = 'upload-zone';
+
+  try {
+    const text = await extractPDFText(file);
+    const result = parseStitchFiddlePDF(text);
+    if (!result || result.totalRows === 0) {
+      status.textContent = 'Could not find chart rows. Is this a Stitch Fiddle colorwork PDF?';
+      ua.className = 'upload-zone error';
+      label.textContent = 'Tap to try a different PDF';
+      return;
+    }
+    pendingChartData = result;
+    document.getElementById('f-rows').value = result.totalRows;
+    document.getElementById('f-stitches').value = result.stitches;
+    status.textContent = `✓ Parsed ${result.totalRows} rows × ${result.stitches} stitches`;
+    ua.className = 'upload-zone has-data';
+    label.textContent = `✓ ${file.name}`;
+  } catch(err) {
+    status.textContent = 'Error reading PDF: ' + err.message;
+    ua.className = 'upload-zone error';
+  }
+  e.target.value = '';
 });
 
-document.getElementById('btn-save-project').addEventListener('click', async () => {
+// PDF text extraction — uses the PDF text layer directly
+async function extractPDFText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const bytes = new Uint8Array(e.target.result);
+        // Extract all text streams from the PDF binary
+        let text = '';
+        const decoder = new TextDecoder('latin1');
+        const raw = decoder.decode(bytes);
+
+        // Pull text from BT...ET blocks (PDF text objects)
+        const btEtRegex = /BT([\s\S]*?)ET/g;
+        let match;
+        while ((match = btEtRegex.exec(raw)) !== null) {
+          const block = match[1];
+          // Extract strings in () — PDF literal strings
+          const strRegex = /\(([^)]*)\)/g;
+          let sm;
+          while ((sm = strRegex.exec(block)) !== null) {
+            text += sm[1] + '\n';
+          }
+        }
+
+        // Also try to grab plain text content after stream markers
+        // (some PDFs embed text directly)
+        const streamRegex = /stream\r?\n([\s\S]*?)endstream/g;
+        while ((match = streamRegex.exec(raw)) !== null) {
+          const s = match[1];
+          if (s.includes('$') || s.includes('%') || s.includes('!')) {
+            text += s + '\n';
+          }
+        }
+
+        resolve(text);
+      } catch(err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+document.getElementById('btn-toggle-manual').addEventListener('click', () => {
+  manualMode = !manualMode;
+  document.getElementById('manual-override-group').style.display = manualMode ? '' : 'none';
+  document.getElementById('btn-toggle-manual').textContent = manualMode ? 'Hide manual entry' : 'Enter row/stitch count manually instead';
+});
+
+document.getElementById('btn-save-project').addEventListener('click', () => {
   const name = document.getElementById('f-name').value.trim();
-  const totalRows = parseInt(document.getElementById('f-rows').value);
-  const stitches = parseInt(document.getElementById('f-stitches').value);
   const colorAName = document.getElementById('f-color-a-name').value.trim() || 'Color A';
   const colorAHex = document.getElementById('f-color-a-hex').value;
   const colorBName = document.getElementById('f-color-b-name').value.trim() || 'Color B';
   const colorBHex = document.getElementById('f-color-b-hex').value;
-  if (!name || !totalRows || !stitches) { toast('Please fill in name, rows, and stitches.'); return; }
+
+  if (!name) { toast('Please enter a project name.'); return; }
+
+  let totalRows, stitches, chartRows;
+
+  if (pendingChartData) {
+    totalRows = pendingChartData.totalRows;
+    stitches = pendingChartData.stitches;
+    chartRows = pendingChartData.rows;
+  } else if (editingId) {
+    const p = getProject(editingId);
+    totalRows = parseInt(document.getElementById('f-rows').value) || p.totalRows;
+    stitches = parseInt(document.getElementById('f-stitches').value) || p.stitches;
+    chartRows = p.chartRows || null;
+  } else {
+    totalRows = parseInt(document.getElementById('f-rows').value);
+    stitches = parseInt(document.getElementById('f-stitches').value);
+    chartRows = null;
+    if (!totalRows || !stitches) { toast('Upload a PDF or enter row/stitch count manually.'); return; }
+  }
 
   if (editingId) {
     const p = getProject(editingId);
-    p.name = name; p.totalRows = totalRows; p.stitches = stitches;
-    p.colorAName = colorAName; p.colorAHex = colorAHex;
-    p.colorBName = colorBName; p.colorBHex = colorBHex;
-    if (pendingImageData) p.chartImage = pendingImageData;
+    Object.assign(p, { name, colorAName, colorAHex, colorBName, colorBHex, totalRows, stitches });
+    if (pendingChartData) p.chartRows = chartRows;
   } else {
-    const p = {
-      id: uid(), name, totalRows, stitches,
-      colorAName, colorAHex, colorBName, colorBHex,
-      chartImage: pendingImageData || null,
-      currentRow: 1, currentStitch: 1
-    };
-    projects.push(p);
+    projects.push({ id: uid(), name, colorAName, colorAHex, colorBName, colorBHex,
+      totalRows, stitches, chartRows, currentRow: 1, currentStitch: 1 });
   }
-  await saveAll();
+  saveAll();
   renderList();
-  if (editingId) { openTracker(editingId); }
-  else { showScreen('list'); }
+  editingId ? openTracker(editingId) : showScreen('list');
 });
+
 document.getElementById('btn-cancel-form').addEventListener('click', () => {
   editingId ? openTracker(editingId) : showScreen('list');
 });
 document.getElementById('btn-new').addEventListener('click', () => openForm(null));
 
-// ── TRACKER ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TRACKER
+// ─────────────────────────────────────────────────────────────────────────────
 function openTracker(id) {
   activeId = id;
   renderTracker();
@@ -378,7 +552,6 @@ function renderTracker() {
   document.getElementById('tracker-subtitle').textContent =
     `${rs ? 'Right side (ADC)' : 'Wrong side'} · Color changes every 2 rows`;
 
-  // color band
   const col = activeColor(p.currentRow);
   const ha = document.getElementById('color-half-a');
   const hb = document.getElementById('color-half-b');
@@ -389,101 +562,293 @@ function renderTracker() {
   ha.classList.toggle('inactive', col !== 'A');
   hb.classList.toggle('inactive', col !== 'B');
 
-  // counters
   document.getElementById('ctr-row').textContent = p.currentRow;
   document.getElementById('ctr-row-of').textContent = `of ${p.totalRows}`;
   document.getElementById('ctr-stitch').textContent = p.currentStitch;
   document.getElementById('ctr-stitch-of').textContent = `of ${p.stitches}`;
 
-  // chart
-  renderChart(p);
+  renderNativeChart(p);
 }
 
-// ── CHART RENDERING ───────────────────────────────────────────────────────
-let chartImgLoaded = false;
-let _chartImg = null;
+// ─────────────────────────────────────────────────────────────────────────────
+// NATIVE CHART RENDERER
+// ─────────────────────────────────────────────────────────────────────────────
+const chartState = { scale: 1, panX: 0, panY: 0, CELL: 10 };
 
-function renderChart(p) {
-  const wrap = document.getElementById('chart-wrap');
-  const img = document.getElementById('chart-img');
-  const noChart = document.getElementById('no-chart');
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return [r,g,b];
+}
+
+function renderNativeChart(p) {
+  const viewport = document.getElementById('chart-viewport');
   const canvas = document.getElementById('chart-canvas');
-  const overlay = document.getElementById('chart-overlay');
+  const noChart = document.getElementById('no-chart');
 
-  if (!p.chartImage) {
-    img.style.display = 'none';
+  if (!p.chartRows || !p.chartRows.length) {
     canvas.style.display = 'none';
-    overlay.style.display = 'none';
     noChart.style.display = '';
     return;
   }
-
   noChart.style.display = 'none';
-  img.style.display = 'block';
   canvas.style.display = 'block';
-  overlay.style.display = 'block';
 
-  const drawHighlight = () => {
-    const w = img.offsetWidth;
-    const h = img.offsetHeight;
-    canvas.width = w; canvas.height = h;
-    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, w, h);
+  const CELL = chartState.CELL;
+  const cols = p.stitches;
+  const rows = p.totalRows;
+  const LABEL_W = 32; // px for row number labels
+  const totalW = LABEL_W + cols * CELL;
+  const totalH = rows * CELL;
 
-    const rowH = h / p.totalRows;
-    // bottom = row 1 → row N is at top
-    const rowIndex = p.totalRows - p.currentRow; // 0-indexed from top
-    const y = rowIndex * rowH;
+  canvas.width = totalW;
+  canvas.height = totalH;
+  canvas.style.width = totalW + 'px';
+  canvas.style.height = totalH + 'px';
 
-    // dim everything else
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, w, y);
-    ctx.fillRect(0, y + rowH, w, h - y - rowH);
+  const ctx = canvas.getContext('2d');
+  const [arR, arG, arB] = hexToRgb(p.colorAHex);
+  const [brR, brG, brB] = hexToRgb(p.colorBHex);
 
-    // highlight band
-    ctx.strokeStyle = '#e94560';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, y + 1, w - 2, rowH - 2);
-
-    // row label
-    const col = activeColor(p.currentRow);
-    const colName = col === 'A' ? p.colorAName : p.colorBName;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    const label = `Row ${p.currentRow} · ${colName}`;
-    ctx.font = 'bold 11px sans-serif';
-    const tw = ctx.measureText(label).width;
-    ctx.fillRect(4, y + 3, tw + 10, 18);
-    ctx.fillStyle = '#e94560';
-    ctx.fillText(label, 9, y + 16);
-  };
-
-  if (img.src !== p.chartImage) {
-    chartImgLoaded = false;
-    img.onload = () => { chartImgLoaded = true; drawHighlight(); };
-    img.src = p.chartImage;
-  } else if (chartImgLoaded) {
-    drawHighlight();
+  const reversible = !!p.reversible;
+  // Pre-compute anchor positions: cell (r, c) gets an anchor if (r-1, c) is a DC
+  // i.e. for each row r, check the row below (r-1) for DC stitches
+  const anchorMap = new Set(); // keys: "r,c"
+  if (reversible && p.chartRows) {
+    for (let r = 1; r < rows; r++) {        // row index (0 = row 1)
+      const belowRow = p.chartRows[r - 1];  // row directly below current
+      if (!belowRow) continue;
+      for (let c = 0; c < cols; c++) {
+        const stitch = belowRow[c];
+        const isDC = stitch && (stitch.isDC === true || stitch === 'B' || stitch === 'A'); // compat
+        if (stitch && stitch.isDC) anchorMap.add(`${r},${c}`);
+      }
+    }
   }
 
-  // tap overlay
-  overlay.onclick = (e) => {
-    const rect = overlay.getBoundingClientRect();
-    const relY = e.clientY - rect.top;
-    const h = rect.height;
-    const rowH = h / p.totalRows;
-    const rowIndexFromTop = Math.floor(relY / rowH);
-    const tappedRow = p.totalRows - rowIndexFromTop; // bottom = row 1
-    const clamped = Math.max(1, Math.min(p.totalRows, tappedRow));
+  // Draw all rows (row 1 at bottom = index totalRows-1 in canvas y)
+  for (let r = 0; r < rows; r++) {
+    const rowData = p.chartRows[r]; // r=0 is row 1
+    const canvasY = (rows - 1 - r) * CELL; // row 1 at bottom
+    const isActive = (r + 1) === p.currentRow;
+
+    for (let c = 0; c < cols; c++) {
+      const stitch = rowData ? rowData[c] : null;
+      // Support both old format (string) and new format ({color, isDC})
+      const cellColor = stitch ? (stitch.color || stitch) : activeColor(r+1);
+      const isA = cellColor === 'A';
+      const isCurrentStitch = isActive && (c + 1) === p.currentStitch;
+
+      // Base cell color
+      if (isA) ctx.fillStyle = `rgb(${arR},${arG},${arB})`;
+      else ctx.fillStyle = `rgb(${brR},${brG},${brB})`;
+
+      ctx.globalAlpha = isActive ? 1.0 : 0.55;
+      ctx.fillRect(LABEL_W + c * CELL, canvasY, CELL, CELL);
+      ctx.globalAlpha = 1.0;
+
+      // Active row highlight border on each cell
+      if (isActive) {
+        ctx.strokeStyle = 'rgba(233,69,96,0.6)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(LABEL_W + c * CELL + 0.5, canvasY + 0.5, CELL - 1, CELL - 1);
+      }
+
+      // Current stitch indicator
+      if (isCurrentStitch) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        const d = 3;
+        ctx.fillRect(LABEL_W + c * CELL + d, canvasY + d, CELL - d*2, CELL - d*2);
+      }
+
+      // Anchor emoji: reversible mode, this cell sits above a DC in the row below
+      if (reversible && anchorMap.has(`${r},${c}`)) {
+        ctx.globalAlpha = isActive ? 1.0 : 0.65;
+        ctx.font = `${CELL - 1}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚓', LABEL_W + c * CELL + CELL / 2, canvasY + CELL / 2);
+        ctx.globalAlpha = 1.0;
+      }
+    }
+
+    // Active row: full-width highlight bar
+    if (isActive) {
+      ctx.fillStyle = 'rgba(233,69,96,0.18)';
+      ctx.fillRect(0, canvasY, totalW, CELL);
+      // Row number label — accent colored
+      ctx.fillStyle = '#e94560';
+      ctx.font = `bold ${CELL - 2}px monospace`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(r+1), LABEL_W - 2, canvasY + CELL/2);
+    } else {
+      // Subtle row number every 5 rows
+      if ((r+1) % 5 === 0 || r === 0) {
+        ctx.fillStyle = 'rgba(136,146,164,0.7)';
+        ctx.font = `${CELL - 3}px monospace`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(r+1), LABEL_W - 2, canvasY + CELL/2);
+      }
+    }
+
+    // Grid line between rows
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(LABEL_W, canvasY);
+    ctx.lineTo(totalW, canvasY);
+    ctx.stroke();
+  }
+
+  // Auto-pan to keep active row visible in viewport
+  applyPanToRow(p.currentRow, rows, totalH, viewport, canvas);
+  setupChartGestures(p, viewport, canvas, rows, totalW, totalH);
+}
+
+function applyPanToRow(currentRow, totalRows, totalH, viewport, canvas) {
+  const vph = viewport.clientHeight;
+  const scale = chartState.scale;
+  // Row position in canvas (row 1 at bottom)
+  const CELL = chartState.CELL;
+  const rowY = (totalRows - currentRow) * CELL; // top of active row in canvas coords
+  const rowCenter = (rowY + CELL / 2) * scale;
+  // Pan so active row is centered in viewport
+  let panY = vph / 2 - rowCenter;
+  const scaledH = totalH * scale;
+  panY = Math.min(0, Math.max(vph - scaledH, panY));
+  chartState.panY = panY;
+  applyTransform(canvas);
+}
+
+function applyTransform(canvas) {
+  canvas.style.transform = `translate(${chartState.panX}px, ${chartState.panY}px) scale(${chartState.scale})`;
+  canvas.style.transformOrigin = '0 0';
+}
+
+// Touch/mouse gestures: pan + pinch zoom
+function setupChartGestures(p, viewport, canvas, totalRows, totalW, totalH) {
+  // Remove old listeners by replacing element
+  const fresh = canvas.cloneNode(true);
+  canvas.parentNode.replaceChild(fresh, canvas);
+  const c = document.getElementById('chart-canvas');
+
+  let lastTouches = null;
+  let lastPanX = 0, lastPanY = 0;
+  let isDragging = false;
+  let startX = 0, startY = 0;
+
+  function clampPan() {
+    const vpw = viewport.clientWidth;
+    const vph = viewport.clientHeight;
+    const s = chartState.scale;
+    const sw = totalW * s, sh = totalH * s;
+    chartState.panX = Math.min(0, Math.max(vpw - sw, chartState.panX));
+    chartState.panY = Math.min(0, Math.max(vph - sh, chartState.panY));
+  }
+
+  // Touch events
+  viewport.addEventListener('touchstart', e => {
+    e.preventDefault();
+    lastTouches = e.touches;
+    if (e.touches.length === 1) {
+      startX = e.touches[0].clientX - chartState.panX;
+      startY = e.touches[0].clientY - chartState.panY;
+    }
+  }, { passive: false });
+
+  viewport.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+      // Pinch zoom
+      const prevDist = Math.hypot(
+        lastTouches[0].clientX - lastTouches[1].clientX,
+        lastTouches[0].clientY - lastTouches[1].clientY);
+      const newDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY);
+      const delta = newDist / prevDist;
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const oldScale = chartState.scale;
+      chartState.scale = Math.min(4, Math.max(0.3, oldScale * delta));
+      // Zoom around midpoint
+      chartState.panX = midX - (midX - chartState.panX) * (chartState.scale / oldScale);
+      chartState.panY = midY - (midY - chartState.panY) * (chartState.scale / oldScale);
+      clampPan();
+      applyTransform(c);
+    } else if (e.touches.length === 1) {
+      // Pan
+      chartState.panX = e.touches[0].clientX - startX;
+      chartState.panY = e.touches[0].clientY - startY;
+      clampPan();
+      applyTransform(c);
+    }
+    lastTouches = e.touches;
+  }, { passive: false });
+
+  viewport.addEventListener('touchend', e => {
+    if (e.changedTouches.length === 1 && e.touches.length === 0) {
+      // Tap: detect if it was a quick tap (no drag)
+      const dx = e.changedTouches[0].clientX - (startX + chartState.panX);
+      const dy = e.changedTouches[0].clientY - (startY + chartState.panY);
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+        handleChartTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY, viewport, p, totalRows);
+      }
+    }
+    lastTouches = e.touches;
+  });
+
+  // Mouse fallback
+  viewport.addEventListener('mousedown', e => {
+    isDragging = true;
+    startX = e.clientX - chartState.panX;
+    startY = e.clientY - chartState.panY;
+    viewport.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    chartState.panX = e.clientX - startX;
+    chartState.panY = e.clientY - startY;
+    clampPan();
+    applyTransform(c);
+  });
+  window.addEventListener('mouseup', e => {
+    if (isDragging) {
+      isDragging = false;
+      viewport.classList.remove('grabbing');
+    }
+  });
+  viewport.addEventListener('click', e => {
+    handleChartTap(e.clientX, e.clientY, viewport, p, totalRows);
+  });
+}
+
+function handleChartTap(clientX, clientY, viewport, p, totalRows) {
+  const CELL = chartState.CELL;
+  const LABEL_W = 32;
+  const rect = viewport.getBoundingClientRect();
+  // Convert screen coords → canvas coords
+  const canvasX = (clientX - rect.left - chartState.panX) / chartState.scale;
+  const canvasY = (clientY - rect.top - chartState.panY) / chartState.scale;
+  if (canvasX < LABEL_W) return; // tapped label area
+  const rowFromTop = Math.floor(canvasY / CELL);
+  const tappedRow = totalRows - rowFromTop; // bottom = row 1
+  const clamped = Math.max(1, Math.min(totalRows, tappedRow));
+  if (clamped !== p.currentRow) {
     p.currentRow = clamped;
     p.currentStitch = 1;
     saveAll();
     renderTracker();
-    toast(`Jumped to Row ${clamped}`);
-  };
+    toast(`Row ${clamped}`);
+  }
 }
 
-// ── COUNTER BUTTONS ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// COUNTER BUTTONS
+// ─────────────────────────────────────────────────────────────────────────────
 document.getElementById('row-plus').addEventListener('click', () => {
   const p = getProject(activeId); if (!p) return;
   if (p.currentRow < p.totalRows) { p.currentRow++; p.currentStitch = 1; saveAll(); renderTracker(); }
@@ -505,10 +870,8 @@ document.getElementById('stitch-minus').addEventListener('click', () => {
   else toast('Already at stitch 1');
 });
 
-// ── EDIT ──────────────────────────────────────────────────────────────────
 document.getElementById('btn-edit-project').addEventListener('click', () => openForm(activeId));
 
-// ── BACK NAV ─────────────────────────────────────────────────────────────
 document.getElementById('nav-back').addEventListener('click', () => {
   const fs = document.getElementById('screen-form');
   if (fs.classList.contains('active')) {
@@ -519,11 +882,11 @@ document.getElementById('nav-back').addEventListener('click', () => {
   }
 });
 
-// ── INIT ─────────────────────────────────────────────────────────────────
-(async () => {
-  await loadAll();
-  renderList();
-})();
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+loadAll();
+renderList();
 </script>
 </body>
 </html>
