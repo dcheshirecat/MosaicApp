@@ -120,6 +120,7 @@
   #chart-tools { display: flex; gap: 6px; }
   #chart-tools button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; }
   #btn-fix-chart.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #btn-window-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   #chart-wrap { position: relative; width: 100%; overflow: hidden; touch-action: none; }
   #chart-img { width: 100%; display: block; user-select: none; -webkit-user-select: none; }
   #chart-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
@@ -328,6 +329,7 @@
       <div id="chart-tools">
         <button id="btn-zoom-out" title="Zoom out">−</button>
         <button id="btn-zoom-in" title="Zoom in">+</button>
+        <button id="btn-window-view" title="Show 10 stitches at a time">10</button>
         <button id="btn-fix-chart" title="Fix mismarked cells">✎</button>
       </div>
     </div>
@@ -379,6 +381,16 @@ let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
 let gridCellSize = 10; // px, adjustable via zoom buttons
+let settings = { windowedView: false }; // app-wide viewing preferences
+const STITCH_WINDOW = 10; // "10 stitches at a time" view width, in columns
+
+async function loadSettings() {
+  const raw = await store.get('mc_settings');
+  if (raw) {
+    try { settings = Object.assign(settings, JSON.parse(raw)); } catch {}
+  }
+}
+async function saveSettings() { await store.set('mc_settings', JSON.stringify(settings)); }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -856,10 +868,13 @@ function renderTracker() {
   if (isGrid) {
     document.getElementById('chart-wrap').style.display = 'none';
     document.getElementById('chart-grid-wrap').style.display = '';
+    document.getElementById('btn-window-view').style.display = '';
+    syncWindowViewUI();
     renderChartGrid(p);
   } else {
     document.getElementById('chart-grid-wrap').style.display = 'none';
     document.getElementById('chart-wrap').style.display = '';
+    document.getElementById('btn-window-view').style.display = 'none';
     renderChart(p);
   }
 }
@@ -887,8 +902,29 @@ function setGridCell(p, row, stitch, code) {
 function renderChartGrid(p) {
   const g = p.chartGrid;
   const canvas = document.getElementById('chart-grid-canvas');
-  const cs = gridCellSize;
-  canvas.width = g.cols * cs;
+  const wrap = document.getElementById('chart-grid-wrap');
+
+  const curRowIndexFromTop = g.rows - p.currentRow;
+  let curColIndex = p.currentStitch - 1;
+  if (!isRightSide(p.currentRow)) curColIndex = g.cols - 1 - curColIndex;
+
+  // In windowed mode we only draw a STITCH_WINDOW-wide slice of columns,
+  // centered on the current stitch, and size cells to fill the screen
+  // width — this is the "10 stitches at a time" view for wide charts.
+  const windowed = settings.windowedView;
+  let cs, colStart, colEnd;
+  if (windowed) {
+    const winSize = Math.min(STITCH_WINDOW, g.cols);
+    cs = Math.max(4, Math.floor(wrap.clientWidth / winSize));
+    colStart = Math.max(0, Math.min(g.cols - winSize, curColIndex - Math.floor(winSize / 2)));
+    colEnd = colStart + winSize;
+  } else {
+    cs = gridCellSize;
+    colStart = 0;
+    colEnd = g.cols;
+  }
+
+  canvas.width = (colEnd - colStart) * cs;
   canvas.height = g.rows * cs;
   const ctx = canvas.getContext('2d');
 
@@ -900,16 +936,14 @@ function renderChartGrid(p) {
     ctx.textBaseline = 'middle';
   }
 
-  const curRowIndexFromTop = g.rows - p.currentRow;
-
-  // 1) fill every cell with its base color first
+  // 1) fill every visible cell with its base color first
   for (let r = 0; r < g.rows; r++) {
     const y = r * cs;
-    for (let c = 0; c < g.cols; c++) {
+    for (let c = colStart; c < colEnd; c++) {
       const code = g.cells[r][c];
       const isB = code === 2 || code === 3;
       ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
-      ctx.fillRect(c * cs, y, cs, cs);
+      ctx.fillRect((c - colStart) * cs, y, cs, cs);
     }
   }
 
@@ -920,7 +954,7 @@ function renderChartGrid(p) {
   //    colors/stitch types, no anchor markers overlaid at all).
   if (drawSymbol && p.reversible) {
     for (let r = 0; r < g.rows; r++) {
-      for (let c = 0; c < g.cols; c++) {
+      for (let c = colStart; c < colEnd; c++) {
         const code = g.cells[r][c];
         const isDc = code === 1 || code === 3;
         if (!isDc) continue;
@@ -934,7 +968,7 @@ function renderChartGrid(p) {
         const targetIsB = targetCode === 2 || targetCode === 3;
         ctx.fillStyle = targetIsB ? '#ffffff' : '#000000';
         ctx.globalAlpha = 0.85;
-        ctx.fillText(symbol, c * cs + cs / 2, targetR * cs + cs / 2 + 1);
+        ctx.fillText(symbol, (c - colStart) * cs + cs / 2, targetR * cs + cs / 2 + 1);
         ctx.globalAlpha = 1;
       }
     }
@@ -944,14 +978,12 @@ function renderChartGrid(p) {
   if (curRowIndexFromTop >= 0 && curRowIndexFromTop < g.rows) {
     ctx.strokeStyle = '#e94560';
     ctx.lineWidth = 2;
-    ctx.strokeRect(0, curRowIndexFromTop * cs + 1, g.cols * cs, cs - 2);
+    ctx.strokeRect(0, curRowIndexFromTop * cs + 1, (colEnd - colStart) * cs, cs - 2);
 
     // current stitch highlight
-    let colIndex = p.currentStitch - 1;
-    if (!isRightSide(p.currentRow)) colIndex = g.cols - 1 - colIndex;
-    if (colIndex >= 0 && colIndex < g.cols) {
+    if (curColIndex >= colStart && curColIndex < colEnd) {
       ctx.lineWidth = 3;
-      ctx.strokeRect(colIndex * cs + 1, curRowIndexFromTop * cs + 1, cs - 2, cs - 2);
+      ctx.strokeRect((curColIndex - colStart) * cs + 1, curRowIndexFromTop * cs + 1, cs - 2, cs - 2);
     }
   }
 
@@ -961,7 +993,7 @@ function renderChartGrid(p) {
     const scaleY = canvas.height / rect.height;
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
-    const c = Math.floor(x / cs);
+    const c = colStart + Math.floor(x / cs);
     const r = Math.floor(y / cs);
     if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return;
     g.cells[r][c] = (g.cells[r][c] + 1) % 4;
@@ -969,8 +1001,9 @@ function renderChartGrid(p) {
     renderChartGrid(p);
   } : null;
 
-  // keep current row/stitch scrolled into view
-  const wrap = document.getElementById('chart-grid-wrap');
+  // keep current row scrolled into view (vertical only — the windowed
+  // view already fits horizontally, and full view scrolls horizontally
+  // by hand)
   if (curRowIndexFromTop >= 0) {
     const targetY = curRowIndexFromTop * cs - wrap.clientHeight / 2;
     wrap.scrollTop = Math.max(0, targetY);
@@ -1111,9 +1144,24 @@ document.getElementById('nav-back').addEventListener('click', () => {
   }
 });
 
+document.getElementById('btn-window-view').addEventListener('click', () => {
+  settings.windowedView = !settings.windowedView;
+  saveSettings();
+  syncWindowViewUI();
+  const p = getProject(activeId); if (p) renderChartGrid(p);
+});
+
+function syncWindowViewUI() {
+  document.getElementById('btn-window-view').classList.toggle('active', settings.windowedView);
+  document.getElementById('btn-zoom-in').style.display = settings.windowedView ? 'none' : '';
+  document.getElementById('btn-zoom-out').style.display = settings.windowedView ? 'none' : '';
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────────
 (async () => {
   await loadAll();
+  await loadSettings();
+  syncWindowViewUI();
   renderList();
 })();
 </script>
