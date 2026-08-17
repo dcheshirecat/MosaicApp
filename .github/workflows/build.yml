@@ -320,6 +320,22 @@ jobs:
           gradle wrapper --gradle-version 8.2 --distribution-type bin
           chmod +x gradlew
 
+      - name: Bundle pdf.js for offline use
+        run: |
+          set -e
+          mkdir -p app/src/main/assets/vendor
+          # Same version index.html's CDN fallback points at — keep these in sync.
+          PDFJS_VERSION=3.11.174
+          curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js" \
+            -o app/src/main/assets/vendor/pdf.min.js
+          curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js" \
+            -o app/src/main/assets/vendor/pdf.worker.min.js
+          # Fail the build loudly if either file didn't actually come down —
+          # better to catch a broken PDF-import feature here than to ship
+          # an APK where it silently falls back to needing a connection.
+          test -s app/src/main/assets/vendor/pdf.min.js
+          test -s app/src/main/assets/vendor/pdf.worker.min.js
+
       - name: Generate debug keystore
         run: |
           keytool -genkeypair -v \
