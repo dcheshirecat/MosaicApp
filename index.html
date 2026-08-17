@@ -48,9 +48,20 @@
   label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
   input[type=text], input[type=number] { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; color: var(--text); font-size: 1rem; font-family: inherit; outline: none; }
   input:focus { border-color: var(--accent); }
-  .color-row { display: flex; gap: 10px; align-items: center; }
+  .color-row { display: flex; gap: 10px; align-items: center; position: relative; }
   .color-row input[type=text] { flex: 1; }
-  input[type=color] { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer; padding: 2px; flex-shrink: 0; }
+
+  /* custom color picker (native input[type=color] doesn't show a picker UI
+     in the Android WebView this app runs in, so we build our own) */
+  .color-swatch-btn { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; }
+  .color-picker-pop { display: none; position: absolute; top: 52px; right: 0; z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; width: 240px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
+  .color-picker-pop.open { display: block; }
+  .color-picker-hex-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .color-picker-hex-row .swatch-preview { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; }
+  .color-picker-hex-row input[type=text] { flex: 1; font-family: monospace; text-transform: uppercase; }
+  .color-picker-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .color-picker-presets button { width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); cursor: pointer; padding: 0; }
+  .color-picker-presets button.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
   .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
   .btn-secondary { width: 100%; padding: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
   .btn-small { padding: 10px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; font-family: inherit; cursor: pointer; }
@@ -179,14 +190,28 @@
     <label>Color A (first color)</label>
     <div class="color-row">
       <input type="text" id="f-color-a-name" placeholder="e.g. Cream">
-      <input type="color" id="f-color-a-hex" value="#f5e6c8">
+      <button type="button" class="color-swatch-btn" id="f-color-a-swatch" style="background:#f5e6c8"></button>
+      <div class="color-picker-pop" id="picker-pop-a">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-a" style="background:#f5e6c8"></div>
+          <input type="text" id="f-color-a-hex-input" value="#f5e6c8" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <div class="color-picker-presets" id="presets-a"></div>
+      </div>
     </div>
   </div>
   <div class="form-group">
     <label>Color B (second color)</label>
     <div class="color-row">
       <input type="text" id="f-color-b-name" placeholder="e.g. Teal">
-      <input type="color" id="f-color-b-hex" value="#2a7f7f">
+      <button type="button" class="color-swatch-btn" id="f-color-b-swatch" style="background:#2a7f7f"></button>
+      <div class="color-picker-pop" id="picker-pop-b">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-b" style="background:#2a7f7f"></div>
+          <input type="text" id="f-color-b-hex-input" value="#2a7f7f" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <div class="color-picker-presets" id="presets-b"></div>
+      </div>
     </div>
   </div>
 
@@ -208,7 +233,7 @@
       <input type="checkbox" id="f-reversible">
       <span>Reversible technique (Color A is Color B on the other side)</span>
     </label>
-    <div class="hint">When on, the ADC symbol is placed in the cell <strong>above</strong> each "X" cell instead of on the X cell itself, since the X cell's own color still needs to read clearly.</div>
+    <div class="hint">When on, the ADC symbol is placed in the cell <strong>above</strong> each "X" cell (never on the X cell itself, since its own color still needs to read clearly). When off, no anchor symbol is shown at all — just the plain colors/stitch types as extracted from the PDF.</div>
   </div>
 
   <div class="form-group">
@@ -436,6 +461,78 @@ document.querySelectorAll('.symbol-choice').forEach(btn => {
   });
 });
 
+// ── CUSTOM COLOR PICKER ──────────────────────────────────────────────────
+// Native <input type="color"> doesn't show a picker UI in the Android
+// WebView this app runs in, so this is a fully custom hex + preset-swatch
+// picker instead — no dependency on OS-level support.
+const COLOR_PRESETS = [
+  '#f5e6c8', '#ffffff', '#1a1a1a', '#8892a4', '#e94560', '#f2a49b',
+  '#ffb347', '#f7e04d', '#4ecca3', '#2a7f7f', '#3f88c5', '#533483',
+  '#8e44ad', '#c2185b', '#795548', '#5d4037', '#d2691e', '#b0c4de',
+  '#ffd1dc', '#98d8c8', '#f6c90e', '#6a5acd', '#2c2c54', '#c0c0c0'
+];
+const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f' };
+
+function isValidHex(v) { return /^#?[0-9a-fA-F]{6}$/.test(v || ''); }
+function normalizeHex(v) { v = v.trim(); if (!v.startsWith('#')) v = '#' + v; return v.toLowerCase(); }
+
+function buildColorPresets(key) {
+  const wrap = document.getElementById('presets-' + key);
+  wrap.innerHTML = '';
+  COLOR_PRESETS.forEach(hex => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.background = hex;
+    b.dataset.hex = hex;
+    b.addEventListener('click', () => {
+      setColorPickerValue(key, hex);
+      document.getElementById('picker-pop-' + key).classList.remove('open');
+    });
+    wrap.appendChild(b);
+  });
+}
+buildColorPresets('a');
+buildColorPresets('b');
+
+function setColorPickerValue(key, hex) {
+  hex = isValidHex(hex) ? normalizeHex(hex) : colorPickerState[key];
+  colorPickerState[key] = hex;
+  document.getElementById('f-color-' + key + '-hex-input').value = hex;
+  document.getElementById('f-color-' + key + '-swatch').style.background = hex;
+  document.getElementById('preview-' + key).style.background = hex;
+  document.querySelectorAll('#presets-' + key + ' button').forEach(b => {
+    b.classList.toggle('selected', b.dataset.hex.toLowerCase() === hex);
+  });
+}
+function getColorPickerValue(key) { return colorPickerState[key]; }
+
+['a', 'b'].forEach(key => {
+  document.getElementById('f-color-' + key + '-swatch').addEventListener('click', () => {
+    const otherKey = key === 'a' ? 'b' : 'a';
+    document.getElementById('picker-pop-' + otherKey).classList.remove('open');
+    document.getElementById('picker-pop-' + key).classList.toggle('open');
+  });
+  const hexInput = document.getElementById('f-color-' + key + '-hex-input');
+  hexInput.addEventListener('input', e => {
+    if (isValidHex(e.target.value)) setColorPickerValue(key, e.target.value);
+  });
+  hexInput.addEventListener('blur', e => {
+    if (!isValidHex(e.target.value)) {
+      toast('Enter a valid hex code, e.g. #E94560');
+      hexInput.value = colorPickerState[key];
+    }
+  });
+});
+document.addEventListener('click', e => {
+  ['a', 'b'].forEach(key => {
+    const pop = document.getElementById('picker-pop-' + key);
+    const swatch = document.getElementById('f-color-' + key + '-swatch');
+    if (pop.classList.contains('open') && !pop.contains(e.target) && e.target !== swatch) {
+      pop.classList.remove('open');
+    }
+  });
+});
+
 function openForm(id = null) {
   editingId = id;
   pendingImageData = null;
@@ -447,9 +544,9 @@ function openForm(id = null) {
   document.getElementById('f-rows').value = p ? p.totalRows : '';
   document.getElementById('f-stitches').value = p ? p.stitches : '';
   document.getElementById('f-color-a-name').value = p ? p.colorAName : '';
-  document.getElementById('f-color-a-hex').value = p ? p.colorAHex : '#f5e6c8';
   document.getElementById('f-color-b-name').value = p ? p.colorBName : '';
-  document.getElementById('f-color-b-hex').value = p ? p.colorBHex : '#2a7f7f';
+  setColorPickerValue('a', p ? p.colorAHex : '#f5e6c8');
+  setColorPickerValue('b', p ? p.colorBHex : '#2a7f7f');
   document.getElementById('f-adc-symbol').value = (p && p.adcSymbol) ? p.adcSymbol : '⚓';
   document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === document.getElementById('f-adc-symbol').value));
   document.getElementById('f-reversible').checked = !!(p && p.reversible);
@@ -506,9 +603,9 @@ document.getElementById('btn-save-project').addEventListener('click', async () =
   const totalRows = parseInt(document.getElementById('f-rows').value);
   const stitches = parseInt(document.getElementById('f-stitches').value);
   const colorAName = document.getElementById('f-color-a-name').value.trim() || 'Color A';
-  const colorAHex = document.getElementById('f-color-a-hex').value;
+  const colorAHex = getColorPickerValue('a');
   const colorBName = document.getElementById('f-color-b-name').value.trim() || 'Color B';
-  const colorBHex = document.getElementById('f-color-b-hex').value;
+  const colorBHex = getColorPickerValue('b');
   const adcSymbol = document.getElementById('f-adc-symbol').value.trim() || '⚓';
   const reversible = document.getElementById('f-reversible').checked;
   if (!name || !totalRows || !stitches) { toast('Please fill in name, rows, and stitches.'); return; }
@@ -725,7 +822,7 @@ function renderTracker() {
     ? `${rs ? 'Right side' : 'Wrong side'} · From imported chart`
     : `${rs ? 'Right side (ADC)' : 'Wrong side'} · Color changes every 2 rows`;
   document.getElementById('mosaic-note-text').textContent = isGrid
-    ? `Colors and stitch types come straight from your imported chart. ${p.reversible ? `${p.adcSymbol || '⚓'} appears in the cell above each anchored double crochet (reversible technique).` : `Cells marked with ${p.adcSymbol || '⚓'} are anchored double crochet.`}`
+    ? `Colors and stitch types come straight from your imported chart. ${p.reversible ? `${p.adcSymbol || '⚓'} appears in the cell above each anchored double crochet (reversible technique).` : `Shown exactly as in the PDF — no anchor markers overlaid.`}`
     : 'Rows 1–2 = Color A · Rows 3–4 = Color B, alternating every 2 rows. Right-side rows use anchored double crochet for floats.';
 
   // color band
@@ -817,18 +914,20 @@ function renderChartGrid(p) {
   }
 
   // 2) draw ADC symbols in a second pass, since reversible mode places them
-  //    in a different cell than the one whose color/fill they describe
-  if (drawSymbol) {
+  //    in a different cell than the one whose color/fill they describe.
+  //    Symbols are ONLY drawn when the reversible toggle is on — when it's
+  //    off, the chart is shown exactly as extracted from the PDF (plain
+  //    colors/stitch types, no anchor markers overlaid at all).
+  if (drawSymbol && p.reversible) {
     for (let r = 0; r < g.rows; r++) {
       for (let c = 0; c < g.cols; c++) {
         const code = g.cells[r][c];
         const isDc = code === 1 || code === 3;
         if (!isDc) continue;
 
-        // target cell to draw the symbol in: the X cell itself normally,
-        // or the cell one row "above" it (toward the top of the canvas,
-        // i.e. r-1) when the reversible technique toggle is on
-        const targetR = p.reversible ? r - 1 : r;
+        // always the cell one row "above" the X (toward the top of the
+        // canvas, i.e. r-1) — never on the X cell itself
+        const targetR = r - 1;
         if (targetR < 0) continue; // no row above the top row — skip
 
         const targetCode = g.cells[targetR][c];
