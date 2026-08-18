@@ -148,11 +148,11 @@
 
   /* grid chart (pdf-imported) */
   #chart-ruler-row { display: flex; }
-  #chart-corner-spacer { width: 30px; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  #chart-corner-spacer { width: 34px; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
   #chart-ruler-wrap { flex: 1; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
   #chart-ruler-canvas { display: block; }
   #chart-grid-row { display: flex; }
-  #chart-row-ruler-wrap { width: 30px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-right: 1px solid var(--border); max-height: 60vh; }
+  #chart-row-ruler-wrap { width: 34px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-right: 1px solid var(--border); max-height: 60vh; }
   #chart-row-ruler-canvas { display: block; }
   #chart-grid-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   #chart-grid-wrap { flex: 1; min-width: 0; overflow: auto; max-height: 55vh; -webkit-overflow-scrolling: touch; background: var(--bg); }
@@ -186,7 +186,7 @@
   .wheel-lightness { width: 100%; margin-bottom: 8px; accent-color: var(--accent); }
 
   /* right row ruler */
-  #chart-row-ruler-right-wrap { width: 30px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-left: 1px solid var(--border); max-height: 60vh; }
+  #chart-row-ruler-right-wrap { width: 34px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-left: 1px solid var(--border); max-height: 60vh; }
   #chart-row-ruler-right-canvas { display: block; }
 
   /* stitch marker */
@@ -416,7 +416,7 @@
       <div id="chart-ruler-wrap">
         <canvas id="chart-ruler-canvas"></canvas>
       </div>
-      <div id="chart-corner-spacer-right" style="width:30px;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border);border-left:1px solid var(--border);"></div>
+      <div id="chart-corner-spacer-right" style="width:34px;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border);border-left:1px solid var(--border);"></div>
     </div>
     <div id="chart-grid-row" style="display:none">
       <div id="chart-row-ruler-wrap">
@@ -933,33 +933,33 @@ document.getElementById('btn-new').addEventListener('click', () => openForm(null
 // ── PDF IMPORT ───────────────────────────────────────────────────────────
 let pdfDoc = null; // kept for compat reference
 
-// ── PDF CHART IMPORT (operator-list based) ──────────────────────────────
-// Stitch Fiddle PDFs draw every cell as its own filled rectangle, plus a
-// tiny per-cell text glyph for anything that isn't a plain background
-// stitch. We used to read this via pdf.js's getTextContent(), but that API
-// merges/re-splits nearby glyphs using its own spacing heuristics and
-// silently inserts characters that were never in the PDF (e.g. turning
-// "$\"" into "$ \""), which corrupts the parse at this glyph density.
+// ── PDF CHART IMPORT (text-layer based) ──────────────────────────────────
 //
-// Instead we walk the page's raw operator list directly:
-//   - setFillRGBColor / setFillGray / setFillColorN → tracks current fill
-//   - constructPath (a filled rectangle, already resolved by pdf.js into a
-//     single op with an explicit bounding box) → one grid cell's color
-//   - beginText/moveText/showText → one grid cell's stitch-type glyph
-//     (showText gives the already-decoded Unicode character directly, with
-//     no merging, since this font renders one glyph per Tj call)
+// Stitch Fiddle PDFs encode every stitch as a character in the text layer.
+// The format, confirmed against the actual PDF:
 //
-// Symbol key (from the PDF legend, confirmed against the legend page):
-//   fill color: light → Color A, dark → Color B  (per-cell, not per-row —
-//     a mosaic row can and does mix both working colors cell-by-cell)
-//   showText glyph ' ' (space) OR '!'  → double crochet / raised stitch
-//     (both are the *same* stitch, just contrast-matched light/dark glyph
-//     variants so the marker reads clearly against either background)
-//   no glyph at all in a cell → single crochet (plain background stitch)
-//   '&' glyph on a row → that row is the foundation chain row (skip it)
+//   $ = Color A (row marker / stitch in A color)
+//   % = Color B (row marker / stitch in B color)
+//   ! = double crochet / overlay stitch (the X mark)
+//   " = border stitch (right side of $-rows — strip)
+//   # = border stitch (right side of %-rows — strip)
+//   & = foundation chain (skip entire row)
+//   space = single crochet (background stitch)
 //
-// cell code: 0 = A/sc, 1 = A/dc, 2 = B/sc, 3 = B/dc
-//   (matches the existing renderer's expectation exactly)
+// Each pattern row looks like one of:
+//   %# !!! !! #%     (Color B row — starts %, border #, inner, border #, ends %)
+//   $" !! ! "$       (Color A row — starts $, border ", inner, border ", ends $)
+//
+// So: first char = row color ($=A, %=B). Strip first 2 and last 2 chars.
+// Inner: '!' = DC (X stitch), ' ' = SC (background). Nothing else matters.
+//
+// Cell codes used throughout the renderer:
+//   0 = Color A, SC     1 = Color A, DC
+//   2 = Color B, SC     3 = Color B, DC
+//
+// The PDF text layer items come out in VISUAL top-to-bottom order (highest
+// row number first in the Stitch Fiddle numbering). We reverse at the end
+// so cells[0] = row 1 (the bottom row of the chart, worked first).
 
 async function startPdfTextImport(file) {
   const ok = await pdfjsReady;
@@ -971,220 +971,134 @@ async function startPdfTextImport(file) {
 
   const label = document.getElementById('pdf-import-label');
   const area  = document.getElementById('pdf-import-area');
-  label.textContent = 'Scanning all PDF pages…';
+  label.textContent = 'Reading PDF text layer…';
   area.className = '';
 
   try {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    let best = null;
+    // Collect raw text items from all pages, preserving Y position so we
+    // can reconstruct line order reliably (pdf.js delivers items in the
+    // order they appear in the content stream, which is generally top-down
+    // but may interleave across pages for multi-page charts).
+    const allItems = []; // { text, y, pageNo }
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
       const page = await doc.getPage(pageNo);
-      const opList = await page.getOperatorList();
-      const result = extractStitchFiddleGrid(opList, pdfjsLib.OPS);
-      if (result && (!best || result.rows * result.cols > best.rows * best.cols)) {
-        best = result;
+      const tc   = await page.getTextContent({ includeMarkedContent: false });
+      const vp   = page.getViewport({ scale: 1 });
+      // In PDF coordinates y=0 is at the bottom. We want top-first order,
+      // so we invert y: topY = pageHeight - pdfY.
+      for (const item of tc.items) {
+        if (!item.str || !item.transform) continue;
+        const pdfY  = item.transform[5];
+        const topY  = (pageNo - 1) * 100000 + (vp.height - pdfY); // page-offset so pages stack
+        allItems.push({ text: item.str, y: topY, pageNo });
       }
     }
 
-    if (!best || best.rows < 10 || best.cols < 10) {
-      label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart grid found`;
+    // Group items into lines by Y coordinate (items within 2 units = same line)
+    allItems.sort((a, b) => a.y - b.y);
+    const lines = [];
+    let curLine = null, curY = null;
+    for (const item of allItems) {
+      if (curY === null || Math.abs(item.y - curY) > 2) {
+        curLine = { y: item.y, text: '' };
+        lines.push(curLine);
+        curY = item.y;
+      }
+      curLine.text += item.str;
+    }
+
+    const result = parseStitchFiddleLines(lines.map(l => l.text));
+    if (!result || result.rows < 5 || result.cols < 5) {
+      label.textContent = 'No Stitch Fiddle chart found — check that this is a colorwork PDF exported from Stitch Fiddle.';
       area.className = '';
-      toast('No Stitch Fiddle chart grid found');
+      toast('No chart rows found in PDF');
       return;
     }
 
-    document.getElementById('f-rows').value = best.rows;
-    document.getElementById('f-stitches').value = best.cols;
-    pendingChartGrid = { rows: best.rows, cols: best.cols, cells: best.cells };
+    document.getElementById('f-rows').value    = result.rows;
+    document.getElementById('f-stitches').value = result.cols;
+    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells };
     pendingChartSource = 'grid';
-    const missingNote = best.missingCells ? ` (${best.missingCells} cell${best.missingCells === 1 ? '' : 's'} unreadable)` : '';
-    label.textContent = `✓ ${file.name} — ${best.rows} rows × ${best.cols} sts (all ${doc.numPages} pages scanned)${missingNote}`;
-    area.className = 'has-grid';
-    toast(`Chart parsed: ${best.rows} rows × ${best.cols} stitches`);
+    label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} stitches`;
+    area.className     = 'has-grid';
+    toast(`Chart parsed: ${result.rows} rows × ${result.cols} stitches`);
+
   } catch (err) {
     console.error('Stitch Fiddle PDF import failed', err);
-    label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
-    area.className = '';
+    label.textContent  = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
+    area.className     = '';
     toast('PDF read error');
   }
 }
 
-// Walks one page's raw operator list and returns
-// { rows, cols, cells, missingCells } or null if this page isn't a
-// Stitch Fiddle chart grid. cells[0] is the topmost chart row on the page
-// (matching the renderer's "array index 0 = top/highest source row"
-// convention), cells[r][0] is the leftmost stitch (stitch #1).
-function extractStitchFiddleGrid(opList, OPS) {
-  const rev = {};
-  for (const k in OPS) rev[OPS[k]] = k;
+// Pure text parser — takes an array of line strings (already in top-to-bottom
+// order) and returns { rows, cols, cells } or null.
+function parseStitchFiddleLines(lines) {
+  const patternRows = []; // collected top-first; will be reversed at end
 
-  let fillColor = null;
-  const rectSamples = [];   // { x, y, color } — one per filled grid cell
-  const glyphSamples = [];  // { x, y, ch }     — one per stitch-type glyph
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
 
-  let inText = false;
-  let textX = null, textY = null;
+    // Skip chain row (foundation), page metadata, and pure-digit lines
+    if (/^[$%&][&]+[$%]?$/.test(line)) continue;  // chain/foundation row
+    if (/^& Chain/.test(line)) continue;  // "& Chain$..." merged line
+    if (/^(Designed with|1000\d{4,}|Single crochet|Double crochet|Border stitch|Color [AB]|Chain)/.test(line)) continue;
+    if (/^\d[\d\s]*$/.test(line)) continue; // row-number labels
 
-  const fn = opList.fnArray, ar = opList.argsArray;
-  for (let i = 0; i < fn.length; i++) {
-    const name = rev[fn[i]];
-    const args = ar[i];
-    switch (name) {
-      case 'setFillRGBColor':
-      case 'setFillGray':
-      case 'setFillColorN':
-      case 'setFillColor':
-        fillColor = Array.isArray(args) ? args[0] : args;
-        break;
-      case 'constructPath': {
-        // args = [subOpsArray, coordsArray, bbox]; pdf.js already resolves
-        // simple filled rectangles into a single op with an explicit bbox.
-        const bbox = args && args[2];
-        if (bbox) {
-          const x0 = bbox[0], y0 = bbox[1], x1 = bbox[2], y1 = bbox[3];
-          const w = x1 - x0, h = y1 - y0;
-          if (w > 1 && h > 1) {
-            rectSamples.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, color: fillColor });
-          }
-        }
-        break;
+    // Pattern row: starts with $ or %, ends with $ or %, length >= 5
+    const startCh = line[0];
+    const endCh   = line[line.length - 1];
+    if ((startCh !== '$' && startCh !== '%') ||
+        (endCh   !== '$' && endCh   !== '%') ||
+        line.length < 5) continue;
+
+    const isColorA = (startCh === '$');
+
+    // Strip the 2-char frame from each side: <color><border> ... <border><color>
+    // The border char is " for $-rows and # for %-rows.
+    const inner = line.slice(2, -2);
+    if (!inner.length) {
+      // Empty row (e.g. the spacer rows $" "$ with just spaces) — treat as
+      // an all-SC row with the known color so the row count stays correct.
+      patternRows.push({ isColorA, stitches: [] }); // handled below as empty
+      continue;
+    }
+
+    const stitches = [];
+    for (const ch of inner) {
+      if (ch === '!') {
+        // DC (X) stitch — same working color as the row
+        stitches.push(isColorA ? 1 : 3);
+      } else if (ch === ' ') {
+        // SC (background) stitch
+        stitches.push(isColorA ? 0 : 2);
       }
-      case 'beginText':
-        inText = true; textX = null; textY = null;
-        break;
-      case 'endText':
-        inText = false;
-        break;
-      case 'moveText':
-        if (inText) { textX = args[0]; textY = args[1]; }
-        break;
-      case 'showText': {
-        if (!inText || textX == null) break;
-        const glyphs = args[0];
-        if (Array.isArray(glyphs) && glyphs.length) {
-          const g = glyphs[0];
-          const ch = g && g.unicode;
-          if (ch != null) glyphSamples.push({ x: textX, y: textY, ch });
-        }
-        break;
-      }
-      default:
-        break;
+      // any other char (stray border artifact) — skip
     }
+
+    if (stitches.length > 0) patternRows.push({ isColorA, stitches });
   }
 
-  if (rectSamples.length < 200) return null; // not a dense chart grid page
+  if (patternRows.length === 0) return null;
 
-  function colorIsLight(c) {
-    if (c == null) return true;
-    if (typeof c === 'string') {
-      const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c);
-      if (m) {
-        const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
-        return (r + g + b) / 3 > 127;
-      }
-      const gval = parseFloat(c);
-      if (!Number.isNaN(gval)) return gval > 0.5;
-      return true;
-    }
-    if (Array.isArray(c)) {
-      if (c.length === 1) return c[0] > 0.5;
-      if (c.length >= 3) return (c[0] + c[1] + c[2]) / 3 > 0.5;
-    }
-    return true;
-  }
+  // The PDF lists rows top-to-bottom, meaning highest Stitch Fiddle row number
+  // first. The renderer expects cells[0] = row 1 (lowest, worked first), so reverse.
+  patternRows.reverse();
 
-  // Cluster rect centers into column/row bins using the median glyph pitch,
-  // rather than assuming any fixed page geometry (robust to page size/scale).
-  function estimatePitch(values) {
-    const sorted = Array.from(new Set(values.map(v => Math.round(v * 100) / 100))).sort((a, b) => a - b);
-    const gaps = [];
-    for (let i = 1; i < sorted.length; i++) {
-      const d = sorted[i] - sorted[i - 1];
-      if (d > 0.3 && d < 20) gaps.push(d);
-    }
-    gaps.sort((a, b) => a - b);
-    return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 2.37;
-  }
-  function clusterAxis(values, pitchHint) {
-    const sorted = values.slice().sort((a, b) => a - b);
-    const bins = [];
-    for (const v of sorted) {
-      if (!bins.length || v - bins[bins.length - 1].sum / bins[bins.length - 1].n > pitchHint * 0.5) {
-        bins.push({ sum: v, n: 1 });
-      } else {
-        bins[bins.length - 1].sum += v;
-        bins[bins.length - 1].n += 1;
-      }
-    }
-    return bins.map(b => b.sum / b.n);
-  }
+  const cols = Math.max(...patternRows.map(r => r.stitches.length));
+  const cells = patternRows.map(({ isColorA, stitches }) => {
+    // Pad shorter rows (empty spacer rows etc.) with SC in the row's color
+    const padCode = isColorA ? 0 : 2;
+    const padded  = stitches.slice();
+    while (padded.length < cols) padded.push(padCode);
+    return padded;
+  });
 
-  const xs = rectSamples.map(r => r.x);
-  const ys = rectSamples.map(r => r.y);
-  const pitchX = estimatePitch(xs);
-  const pitchY = estimatePitch(ys);
-
-  const colCentersAsc = clusterAxis(xs, pitchX).sort((a, b) => a - b);
-  const rowCentersAsc = clusterAxis(ys, pitchY).sort((a, b) => a - b); // ascending PDF-y = bottom-of-page first
-
-  const nCols = colCentersAsc.length;
-  const nRows = rowCentersAsc.length;
-  if (nCols < 3 || nRows < 10) return null;
-
-  function nearestBin(v, centers) {
-    let bi = 0, bd = Infinity;
-    for (let i = 0; i < centers.length; i++) {
-      const d = Math.abs(centers[i] - v);
-      if (d < bd) { bd = d; bi = i; }
-    }
-    return bi;
-  }
-
-  const colorGrid = Array.from({ length: nRows }, () => new Array(nCols).fill(null));
-  for (const r of rectSamples) {
-    const ci = nearestBin(r.x, colCentersAsc);
-    const ri = nearestBin(r.y, rowCentersAsc);
-    colorGrid[ri][ci] = colorIsLight(r.color) ? 'A' : 'B';
-  }
-
-  const dcGrid = Array.from({ length: nRows }, () => new Array(nCols).fill(false));
-  const chainRowsAsc = new Set();
-  for (const g of glyphSamples) {
-    const ci = nearestBin(g.x, colCentersAsc);
-    const ri = nearestBin(g.y, rowCentersAsc);
-    if (g.ch === ' ' || g.ch === '!') dcGrid[ri][ci] = true;
-    else if (g.ch === '&') chainRowsAsc.add(ri);
-  }
-
-  // Order rows top-of-page first (PDF y grows upward → descending y = top
-  // first), drop the foundation-chain row(s), and drop the two outermost
-  // marker columns (the $/% color-key column on each side — not a stitch).
-  const rowOrderTopFirst = [];
-  for (let i = 0; i < nRows; i++) rowOrderTopFirst.push(i);
-  rowOrderTopFirst.sort((a, b) => rowCentersAsc[b] - rowCentersAsc[a]);
-  const patternRows = rowOrderTopFirst.filter(ri => !chainRowsAsc.has(ri));
-
-  const innerCols = [];
-  for (let c = 1; c < nCols - 1; c++) innerCols.push(c);
-  if (!innerCols.length) return null;
-
-  const cells = [];
-  let missing = 0;
-  for (const ri of patternRows) {
-    const row = [];
-    for (const ci of innerCols) {
-      const color = colorGrid[ri][ci];
-      if (color == null) { missing++; row.push(0); continue; }
-      const dc = dcGrid[ri][ci];
-      row.push(dc ? (color === 'A' ? 1 : 3) : (color === 'A' ? 0 : 2));
-    }
-    cells.push(row);
-  }
-
-  return { rows: cells.length, cols: innerCols.length, cells, missingCells: missing };
+  return { rows: patternRows.length, cols, cells };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
@@ -1218,8 +1132,12 @@ function renderTracker() {
 
   let col;
   if (isGrid) {
-    const cell = getGridCell(p, p.currentRow, p.currentStitch);
-    col = cell != null && (cell === 2 || cell === 3) ? 'B' : 'A';
+    // Derive working color from the first cell of the current row —
+    // in overlay mosaic every cell in a row uses the same working color.
+    const g2 = p.chartGrid;
+    const ri = g2 ? g2.rows - p.currentRow : -1;
+    const firstCell = (g2 && ri >= 0 && ri < g2.rows) ? g2.cells[ri][0] : null;
+    col = (firstCell === 2 || firstCell === 3) ? 'B' : 'A';
   } else {
     col = activeColor(p.currentRow);
   }
@@ -1327,7 +1245,7 @@ function renderChartGrid(p) {
         // out / done" regardless of the cell's underlying color — a dark
         // tint alone looked more like a shadow than a completed-stitch
         // marker, especially on already-dark Color B cells.
-        ctx.fillStyle = 'rgba(100,104,112,0.72)';
+        ctx.fillStyle = 'rgba(80,84,92,0.65)';
         ctx.fillRect(x, y, cs, cs);
       }
     }
@@ -1451,8 +1369,8 @@ function renderChartGrid(p) {
 
   renderChartRuler(g, cs, colStart, colEnd);
   renderChartBottomRuler(g, cs, colStart, colEnd);
-  renderChartRowRuler(g, cs, p.currentRow);
-  renderChartRowRulerRight(g, cs, p.currentRow);
+  renderChartRowRuler(g, cs, p.currentRow, p.colorAHex, p.colorBHex);
+  renderChartRowRulerRight(g, cs, p.currentRow, p.colorAHex, p.colorBHex, g);
 
   // keep current row scrolled into view (vertical only — the windowed
   // view already fits horizontally, and full view scrolls horizontally
@@ -1499,9 +1417,10 @@ function renderChartRuler(g, cs, colStart, colEnd) {
 // which row you're looking at without counting cells. At very small cell
 // sizes (zoomed far out) every label won't fit, so it thins out to every
 // 5th/10th row automatically to stay readable.
-function renderChartRowRuler(g, cs, currentRow) {
+function renderChartRowRuler(g, cs, currentRow, colorAHex, colorBHex) {
   const canvas = document.getElementById('chart-row-ruler-canvas');
-  const W = 30;
+  const STRIP = 4; // px color strip on right edge
+  const W = 34;
   canvas.width = W;
   canvas.height = g.rows * cs;
   const ctx = canvas.getContext('2d');
@@ -1511,28 +1430,38 @@ function renderChartRowRuler(g, cs, currentRow) {
   for (let r = 0; r < g.rows; r++) {
     const rowNum = g.rows - r;
     const isCurrent = rowNum === currentRow;
+    // Color strip: full height of cell, right edge
+    const firstCode = g.cells[r] ? g.cells[r][0] : 0;
+    const isRowB = firstCode === 2 || firstCode === 3;
+    ctx.fillStyle = isRowB ? (colorBHex || '#2a7f7f') : (colorAHex || '#f5e6c8');
+    ctx.globalAlpha = isCurrent ? 1 : 0.5;
+    ctx.fillRect(W - STRIP, r * cs, STRIP, cs);
+    ctx.globalAlpha = 1;
     if (rowNum % step !== 0 && rowNum !== 1 && rowNum !== g.rows && !isCurrent) continue;
     const y = r * cs + cs / 2;
     ctx.fillStyle = isCurrent ? '#e94560' : '#8892a4';
     ctx.font = `${isCurrent ? 'bold ' : ''}${Math.min(11, Math.max(8, cs * 0.55))}px sans-serif`;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.strokeStyle = isCurrent ? '#e94560' : 'rgba(136,146,164,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(W - 6, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-    ctx.fillText(String(rowNum), W - 9, y);
+    if (isCurrent) {
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(W - STRIP - 6, y);
+      ctx.lineTo(W - STRIP, y);
+      ctx.stroke();
+    }
+    ctx.fillText(String(rowNum), W - STRIP - 2, y);
   }
 }
 
 // Right-side row ruler — same as the left ruler but anchored to the right
 // of the grid. Highlights the current row in accent color.
-function renderChartRowRulerRight(g, cs, currentRow) {
+function renderChartRowRulerRight(g, cs, currentRow, colorAHex, colorBHex, grid) {
   const canvas = document.getElementById('chart-row-ruler-right-canvas');
   if (!canvas) return;
-  const W = 30;
+  const STRIP = 4;
+  const W = 34;
   canvas.width = W;
   canvas.height = g.rows * cs;
   const ctx = canvas.getContext('2d');
@@ -1542,19 +1471,29 @@ function renderChartRowRulerRight(g, cs, currentRow) {
   for (let r = 0; r < g.rows; r++) {
     const rowNum = g.rows - r;
     const isCurrent = rowNum === currentRow;
+    // Color strip on left edge
+    const rowCells = grid && grid.cells ? grid.cells[r] : null;
+    const firstCode = rowCells ? rowCells[0] : 0;
+    const isRowB = firstCode === 2 || firstCode === 3;
+    ctx.fillStyle = isRowB ? (colorBHex || '#2a7f7f') : (colorAHex || '#f5e6c8');
+    ctx.globalAlpha = isCurrent ? 1 : 0.5;
+    ctx.fillRect(0, r * cs, STRIP, cs);
+    ctx.globalAlpha = 1;
     if (rowNum % step !== 0 && rowNum !== 1 && rowNum !== g.rows && !isCurrent) continue;
     const y = r * cs + cs / 2;
     ctx.fillStyle = isCurrent ? '#e94560' : '#8892a4';
     ctx.font = `${isCurrent ? 'bold ' : ''}${Math.min(11, Math.max(8, cs * 0.55))}px sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.strokeStyle = isCurrent ? '#e94560' : 'rgba(136,146,164,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(6, y);
-    ctx.stroke();
-    ctx.fillText(String(rowNum), 9, y);
+    if (isCurrent) {
+      ctx.strokeStyle = '#e94560';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(STRIP, y);
+      ctx.lineTo(STRIP + 6, y);
+      ctx.stroke();
+    }
+    ctx.fillText(String(rowNum), STRIP + 4, y);
   }
 }
 
