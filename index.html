@@ -52,6 +52,240 @@
   .color-row { display: flex; gap: 10px; align-items: center; position: relative; }
   .color-row input[type=text] { flex: 1; }
 
+  .color-swatch-btn { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; }
+  .color-picker-pop { display: none; position: absolute; top: 52px; right: 0; z-index: 50; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; width: 240px; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
+  .color-picker-pop.open { display: block; }
+  .color-picker-hex-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .color-picker-hex-row .swatch-preview { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; }
+  .color-picker-hex-row input[type=text] { flex: 1; font-family: monospace; text-transform: uppercase; }
+  .color-picker-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .color-picker-presets button { width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); cursor: pointer; padding: 0; }
+  .color-picker-presets button.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .color-picker-section-title { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 9px 0 5px; }
+  .custom-color-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .custom-color-item { position: relative; }
+  .custom-color-item button.color-use { width: 100%; aspect-ratio: 1; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; padding: 0; }
+  .custom-color-item button.color-delete { position: absolute; right: -3px; top: -6px; width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 10px; line-height: 13px; cursor: pointer; }
+  .save-color-row { display: flex; gap: 6px; margin-top: 8px; }
+  .save-color-row .btn-small { flex: 1; padding: 7px 5px; font-size: 0.72rem; }
+  .btn-primary { width: 100%; padding: 14px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
+  .btn-secondary { width: 100%; padding: 12px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-top: 8px; }
+  .btn-small { padding: 10px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; font-family: inherit; cursor: pointer; }
+  .section-title { font-size: 0.82rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; margin-top: 4px; }
+  .hint { font-size: 0.76rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+
+  /* ── IMAGE UPLOAD ── */
+  #upload-area { width: 100%; min-height: 90px; background: var(--card); border: 2px dashed var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; position: relative; }
+  #upload-area.has-img { border-style: solid; border-color: var(--success); color: var(--success); }
+  #chart-file { display: none; }
+
+  #pdf-import-area { width: 100%; min-height: 70px; background: var(--card); border: 2px dashed var(--accent2); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; margin-top: 10px; }
+  #pdf-import-area.has-grid { border-style: solid; border-color: var(--success); color: var(--success); }
+  #chart-pdf-file { display: none; }
+
+  .chart-mode-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .chart-mode-tab { flex: 1; padding: 9px; text-align: center; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.8rem; font-family: inherit; cursor: pointer; }
+  .chart-mode-tab.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+  .chart-mode-pane { display: none; }
+  .chart-mode-pane.active { display: block; }
+
+  .symbol-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .symbol-choice { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; }
+  .symbol-choice.selected { border-color: var(--accent); background: var(--row-hi); }
+  #f-adc-symbol { width: 60px; flex-shrink: 0; text-align: center; }
+  .toggle-label { display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal; font-size: 0.92rem; color: var(--text); cursor: pointer; }
+  .toggle-label input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
+
+  /* ── TRACKER ── */
+  #tracker-header { margin-bottom: 14px; }
+  #tracker-name { font-size: 1.3rem; font-weight: bold; font-style: italic; }
+  #tracker-subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+
+  #color-band { display: flex; border-radius: 10px; overflow: hidden; margin-bottom: 16px; height: 54px; }
+  .color-half { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: bold; letter-spacing: 0.04em; transition: opacity 0.2s; }
+  .color-half.inactive { opacity: 0.35; }
+  .color-half span { background: rgba(0,0,0,0.35); border-radius: 6px; padding: 3px 8px; }
+
+  #counters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .counter-card { background: var(--card); border-radius: 12px; padding: 14px 12px; text-align: center; border: 1px solid var(--border); }
+  .counter-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .counter-val { font-size: 2.2rem; font-weight: bold; line-height: 1; color: var(--text); }
+  .counter-of { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+  .counter-btns { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+  .counter-btns button { width: 38px; height: 38px; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .btn-minus { background: var(--border); color: var(--text); }
+  .btn-plus { background: var(--accent); color: #fff; }
+
+  #chart-section { background: var(--card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
+  #chart-label-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
+  #chart-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  #chart-tools { display: flex; gap: 6px; }
+  #chart-tools button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; }
+  #btn-fix-chart.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #btn-window-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  #chart-legend-pop { display: none; margin: 0 12px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  #chart-legend-pop.open { display: block; }
+  .legend-title { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .legend-row { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; margin-bottom: 6px; line-height: 1.3; }
+  .legend-swatch { width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.15); }
+  .legend-swatch.legend-a { background: var(--accent); }
+  .legend-swatch.legend-b { background: var(--accent2); }
+  .legend-sym { width: 18px; text-align: center; flex-shrink: 0; color: var(--text); font-weight: bold; }
+  #chart-wrap { position: relative; width: 100%; overflow: hidden; touch-action: none; }
+  #chart-img { width: 100%; display: block; user-select: none; -webkit-user-select: none; }
+  #chart-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+  #no-chart { padding: 20px; text-align: center; color: var(--muted); font-size: 0.88rem; font-style: italic; }
+
+  #chart-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+  #chart-ruler-row { display: flex; }
+  #chart-corner-spacer { width: 34px; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  #chart-ruler-wrap { flex: 1; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
+  #chart-ruler-canvas { display: block; }
+  #chart-grid-row { display: flex; }
+  #chart-row-ruler-wrap { width: 34px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-right: 1px solid var(--border); max-height: 60vh; }
+  #chart-row-ruler-canvas { display: block; }
+  #chart-grid-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #chart-grid-wrap { flex: 1; min-width: 0; overflow: auto; max-height: 55vh; -webkit-overflow-scrolling: touch; background: var(--bg); }
+  #chart-bottom-ruler-wrap { overflow: hidden; }
+  #chart-bottom-ruler-canvas { display: block; }
+  #chart-grid-canvas { display: block; touch-action: pan-x pan-y; }
+  #fix-chart-hint { font-size: 0.76rem; color: var(--accent); padding: 6px 12px; display: none; }
+  #fix-chart-hint.show { display: block; }
+
+  #btn-edit-project { width: 100%; padding: 11px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; font-size: 0.9rem; font-family: inherit; cursor: pointer; margin-bottom: 8px; }
+
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: 20px; font-size: 0.88rem; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 999; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .color-wheel { display: block; margin: 8px auto 4px; cursor: crosshair; border-radius: 50%; touch-action: none; }
+  .wheel-lightness { width: 100%; margin-bottom: 8px; accent-color: var(--accent); }
+
+  #chart-row-ruler-right-wrap { width: 34px; flex-shrink: 0; overflow: hidden; background: var(--surface); border-left: 1px solid var(--border); max-height: 60vh; }
+  #chart-row-ruler-right-canvas { display: block; }
+
+  #stitch-marker-overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .stitch-marker { position: absolute; transform: translate(-50%, -100%); font-size: 1.4rem; line-height: 1; animation: markerBob 1.2s ease-in-out infinite; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6)); pointer-events: none; }
+  @keyframes markerBob {
+    0%, 100% { transform: translate(-50%, -100%); }
+    50% { transform: translate(-50%, calc(-100% - 6px)); }
+  }
+
+  #mosaic-note { background: var(--surface); border-left: 3px solid var(--accent2); border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+  #mosaic-note strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div id="nav">
+  <button id="nav-back">&#8592;</button>
+  <h1>🧶 Mosaic Tracker</h1>
+  <button id="btn-settings" title="Settings">⚙️</button>
+</div>
+
+<div id="screen-list" class="screen active">
+  <button id="btn-new">+ New Project</button>
+  <div id="project-list"></div>
+  <div id="empty-state">No projects yet.<br>Tap above to add your first blanket.</div>
+</div>
+
+<div id="screen-settings" class="screen">
+  <p class="section-title">Display</p>
+  <div class="form-group">
+    <label class="toggle-label" for="s-windowed-view">
+      <input type="checkbox" id="s-windowed-view">
+      Windowed chart view by default
+    </label>
+    <div class="hint">Shows a fixed number of stitches at a time instead of the whole row width — handy for wide charts on a small screen.</div>
+  </div>
+  <div class="form-group">
+    <label>Stitches shown per window</label>
+    <input type="number" id="s-window-size" min="4" max="60">
+  </div>
+
+  <p class="section-title">Appearance</p>
+  <div class="form-group">
+    <label>App Accent Color</label>
+    <div class="color-row">
+      <button type="button" class="color-swatch-btn" id="f-color-theme-swatch" style="background:#e94560"></button>
+      <div class="color-picker-pop" id="picker-pop-theme">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-theme" style="background:#e94560"></div>
+          <input type="text" id="f-color-theme-hex-input" value="#e94560" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <canvas class="color-wheel" id="wheel-theme" width="160" height="160"></canvas>
+        <input type="range" class="wheel-lightness" id="lightness-theme" min="0" max="100" value="50">
+        <div class="color-picker-presets" id="presets-theme"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-theme"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="theme">Save current color</button></div>
+      </div>
+      <button type="button" class="btn-small" id="btn-theme-reset">Reset</button>
+    </div>
+    <div class="hint">Changes the app's highlight color used for buttons, the current row, and progress indicators.</div>
+  </div>
+</div>
+
+<div id="screen-form" class="screen">
+  <p class="section-title" id="form-title">New Project</p>
+  <div class="form-group">
+    <label>Project Name</label>
+    <input type="text" id="f-name" placeholder="e.g. Winter Blanket">
+  </div>
+  <div class="form-group">
+    <label>Total Rows in Chart</label>
+    <input type="number" id="f-rows" placeholder="e.g. 60" min="1">
+  </div>
+  <div class="form-group">
+    <label>Stitches per Row</label>
+    <input type="number" id="f-stitches" placeholder="e.g. 120" min="1">
+  </div>
+  <div class="form-group">
+    <label>Color A (first color)</label>
+    <div class="color-row">
+      <input type="text" id="f-color-a-name" placeholder="e.g. Cream">
+      <button type="button" class="color-swatch-btn" id="f-color-a-swatch" style="background:#f5e6c8"></button>
+      <div class="color-picker-pop" id="picker-pop-a">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-a" style="background:#f5e6c8"></div>
+          <input type="text" id="f-color-a-hex-input" value="#f5e6c8" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <canvas class="color-wheel" id="wheel-a" width="160" height="160"></canvas>
+        <input type="range" class="wheel-lightness" id="lightness-a" min="0" max="100" value="50">
+        <div class="color-picker-presets" id="presets-a"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-a"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="a">Save current color</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Color B (second color)</label>
+    <div class="color-row">
+      <input type="text" id="f-color-b-name" placeholder="e.g. Teal">
+      <button type="button" class="color-swatch-btn" id="f-color-b-swatch" style="background:#2a7f7f"></button>
+      <div class="color-picker-pop" id="picker-pop-b">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-b" style="background:#2a7f7f"></div>
+          <input type="text" id="f-color-b-hex-input" value="#2a7f7f" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <canvas class="color-wheel" id="wheel-b" width="160" height="160"></canvas>
+        <input type="range" class="wheel-lightness" id="lightness-b" min="0" max="100" value="50">
+        <div class="color-picker-presets" id="presets-b"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-b"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="b">Save current color</button></div>
+      </div>
+    </div  .project-card:active { border-color: var(--accent); }
+  .project-swatches { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+  .swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); }
+  .project-info { flex: 1; min-width: 0; }
+  .project-name { font-size: 1rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .project-meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+  .project-progress { font-size: 0.78rem; color: var(--success); margin-top: 2px; }
+  .project-del { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+  #empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
+
+  /* ── FORMS ── */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+  input[type=text], input[type=number] { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 11px 13px; color: var(--text); font-size: 1rem; font-family: inherit; outline: none; }
+  input:focus { border-color: var(--accent); }
+  .color-row { display: flex; gap: 10px; align-items: center; position: relative; }
+  .color-row input[type=text] { flex: 1; }
+
   /* custom color picker (native input[type=color] doesn't show a picker UI
      in the Android WebView this app runs in, so we build our own) */
   .color-swatch-btn { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; }
