@@ -1047,12 +1047,16 @@ function parseStitchFiddlePdfItems(pageItems) {
     // in these PDFs — they're just a horizontal position skip with no glyph
     // at all — so the gaps between items must be measured in pixels and
     // converted to cell counts; string concatenation alone loses them.
-    // Primary source: the width of solo single-character items — a lone
-    // glyph's own rendered width IS exactly one cell's width, with no
-    // averaging-over-a-run bias. Secondary: width/length of multi-char runs.
-    // Fallback: vertical row spacing (cells are square).
+    // Primary source: the width of solo single-character chart glyphs
+    // ($ % ! " # &) inside the chart's own column region — a lone glyph's
+    // own rendered width IS exactly one cell's width, with no averaging-
+    // over-a-run bias. Restricting to chart glyphs in the chart region
+    // matters: row-number labels, headers, etc. use a different, usually
+    // narrower font and would otherwise skew the median pitch down, which
+    // silently inflates the column count. Secondary: width/length of
+    // multi-char runs. Fallback: vertical row spacing (cells are square).
     const singleCharPitches = items
-      .filter(it => it.str.length === 1 && it.width > 0)
+      .filter(it => it.str.length === 1 && it.width > 0 && it.x >= leftX - 2 && /[$%!"#&]/.test(it.str))
       .map(it => it.width)
       .filter(p => p > 0.3 && p < 20);
     singleCharPitches.sort((a, b) => a - b);
