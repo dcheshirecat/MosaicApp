@@ -337,12 +337,7 @@
         <span id="pdf-import-label">Tap to import a Stitch Fiddle PDF chart</span>
       </div>
       <input type="file" id="chart-pdf-file" accept="application/pdf">
-      <div class="hint">The PDF importer automatically detects the chart's row/stitch dimensions from the Stitch Fiddle grid; your manual row/stitch values are overwritten by the imported chart.</div>
-      <button type="button" id="pdf-debug-toggle" style="display:none; margin-top:8px; background:none; border:1px solid var(--border, #444); color:var(--muted, #999); border-radius:8px; padding:8px 12px; font-size:0.82rem; width:100%;">Show raw extracted text (debug)</button>
-      <div id="pdf-debug-panel" style="display:none; margin-top:8px;">
-        <div id="pdf-debug-stats" style="font-size:0.78rem; color:var(--muted, #999); margin-bottom:6px;"></div>
-        <textarea id="pdf-debug-text" readonly style="width:100%; min-height:160px; font-family:monospace; font-size:10px; background:var(--card, #1a1a1a); color:inherit; border:1px solid var(--border, #444); border-radius:8px; padding:8px; white-space:pre-wrap;"></textarea>
-      </div>
+      <div class="hint">Renders the PDF's chart page(s) into a chart image (Stitch Fiddle's PDF only draws the pop-stitch symbols as text — everything else is graphics, so this reads it the same way a person would look at it). Enter row/stitch counts manually after import, same as a photo chart.</div>
     </div>
   </div>
 
@@ -890,13 +885,6 @@ document.getElementById('chart-pdf-file').addEventListener('change', e => {
   startPdfTextImport(file);
   e.target.value = '';
 });
-document.getElementById('pdf-debug-toggle').addEventListener('click', () => {
-  const panel = document.getElementById('pdf-debug-panel');
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  document.getElementById('pdf-debug-toggle').textContent =
-    open ? 'Show raw extracted text (debug)' : 'Hide raw extracted text';
-});
 
 document.getElementById('btn-save-project').addEventListener('click', async () => {
   const name = document.getElementById('f-name').value.trim();
@@ -983,74 +971,102 @@ async function startPdfTextImport(file) {
 
   const label = document.getElementById('pdf-import-label');
   const area  = document.getElementById('pdf-import-area');
-  label.textContent = 'Reading PDF text layer…';
+  label.textContent = 'Rendering PDF pages…';
   area.className = '';
 
   try {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    // Collect ONLY the meaningful single-character glyphs (row-color
-    // markers $/%, border markers "/#, and dc-pop markers !) along with
-    // their precise page position.
-    //
-    // IMPORTANT: Stitch Fiddle's PDF never emits a glyph at all for a
-    // blank/background stitch — only border markers and actual dc "pop"
-    // stitches get drawn as text. On-device testing also showed pdf.js
-    // inserting exactly one space between EVERY pair of glyphs, with zero
-    // exceptions anywhere in the chart body — so there is no way to tell
-    // "these two dc's are directly adjacent" apart from "there are some
-    // blank stitches between them" using the text content alone; that
-    // information just isn't present in the character stream.
-    //
-    // What IS reliable is each glyph's exact X position on the page. A
-    // row's own left/right border-glyph X gives its true pixel width, and
-    // each "!" glyph's X gives its exact column within that row — using
-    // geometry instead of counting spaces sidesteps the ambiguity
-    // entirely.
+    // On-device diagnostics on a real Stitch Fiddle export showed the
+    // row-color markers ($/%) and border markers ("/#) each appear
+    // EXACTLY ONCE in the whole PDF's text layer — that's the legend key
+    // ("Color A$", "Color B%", etc.), not one occurrence per row. Only
+    // the dc "pop" stitch symbol (!) is drawn as real, repeated text.
+    // Everything else — row borders, background fills, which color each
+    // row is — is vector graphics, not text. There is no text-based way
+    // to recover that structure; three attempts at parsing it (line-
+    // based, whole-blob regex, and glyph-position geometry) all failed
+    // for the same underlying reason. Instead, render each page exactly
+    // as it visually appears and stitch them into one image — the same
+    // approach the app's existing Photo/Image chart mode already uses
+    // successfully, just sourced from a rendered PDF page instead of a
+    // camera photo.
+    const SCALE = 2.5;
     const FRAME_CHARS = new Set(['$', '%', '"', '#', '!']);
-    const glyphs = []; // { ch, x, y }
+    let legendBottomY = 0; // page-1 y (in unscaled viewport units) below which the legend ends
+
+    const pageCanvases = [];
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
       const page = await doc.getPage(pageNo);
-      const tc   = await page.getTextContent({ includeMarkedContent: false });
-      const vp   = page.getViewport({ scale: 1 });
-      for (const item of tc.items) {
-        if (!item.str || !item.transform) continue;
-        const s = item.str.trim();
-        if (s.length !== 1 || !FRAME_CHARS.has(s)) continue;
-        const x = item.transform[4];
-        const pdfY = item.transform[5];
-        const topY = (pageNo - 1) * 100000 + (vp.height - pdfY);
-        glyphs.push({ ch: s, x, y: topY });
+      const viewport = page.getViewport({ scale: SCALE });
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      if (pageNo === 1) {
+        // Find where the legend key ends so it can be cropped out — a
+        // legend line included in the chart image would throw off the
+        // row-highlight overlay's alignment, since that overlay divides
+        // the image height evenly by total row count.
+        const vp1 = page.getViewport({ scale: 1 });
+        const tc  = await page.getTextContent({ includeMarkedContent: false });
+        for (const item of tc.items) {
+          if (!item.str || !item.transform) continue;
+          const s = item.str.trim();
+          if (s.length !== 1 || !FRAME_CHARS.has(s)) continue;
+          const topY = vp1.height - item.transform[5];
+          if (topY > legendBottomY) legendBottomY = topY;
+        }
+        if (legendBottomY > 0) {
+          const cropTopPx = Math.min(canvas.height - 10, Math.round((legendBottomY + 14) * SCALE));
+          const cropped = document.createElement('canvas');
+          cropped.width  = canvas.width;
+          cropped.height = canvas.height - cropTopPx;
+          cropped.getContext('2d').drawImage(canvas, 0, cropTopPx, canvas.width, cropped.height, 0, 0, canvas.width, cropped.height);
+          pageCanvases.push(cropped);
+          continue;
+        }
       }
+      pageCanvases.push(canvas);
     }
 
-    // Always expose diagnostics — if this still isn't right for some
-    // pattern, real numbers beat another blind guess.
-    window._lastPdfDebugGlyphs = glyphs;
-    const countCh = ch => glyphs.filter(g => g.ch === ch).length;
-    document.getElementById('pdf-debug-stats').textContent =
-      `${glyphs.length} glyphs · $:${countCh('$')} %:${countCh('%')} ":${countCh('"')} #:${countCh('#')} !:${countCh('!')}`;
-    document.getElementById('pdf-debug-text').value =
-      glyphs.map(g => `${g.ch} x=${g.x.toFixed(2)} y=${g.y.toFixed(2)}`).join('\n');
-    document.getElementById('pdf-debug-toggle').style.display = 'block';
-
-    const result = parseStitchFiddleGlyphs(glyphs);
-
-    if (!result || result.rows < 5 || result.cols < 5) {
-      label.textContent = 'No chart rows recognized — tap "Show raw extracted text" below and send it back so the parser can be corrected.';
-      area.className = '';
-      toast('No chart rows found in PDF');
-      return;
+    // Stack all page renders into one tall composite image, matching what
+    // the existing image-chart mode expects (a single image spanning the
+    // whole chart).
+    const totalWidth  = Math.max(...pageCanvases.map(c => c.width));
+    const totalHeight = pageCanvases.reduce((sum, c) => sum + c.height, 0);
+    const composite = document.createElement('canvas');
+    composite.width  = totalWidth;
+    composite.height = totalHeight;
+    const cctx = composite.getContext('2d');
+    cctx.fillStyle = '#ffffff';
+    cctx.fillRect(0, 0, totalWidth, totalHeight);
+    let yOffset = 0;
+    for (const c of pageCanvases) {
+      cctx.drawImage(c, 0, yOffset);
+      yOffset += c.height;
     }
 
-    document.getElementById('f-rows').value    = result.rows;
-    document.getElementById('f-stitches').value = result.cols;
-    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells };
-    pendingChartSource = 'grid';
-    label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} stitches`;
-    area.className     = 'has-grid';
-    toast(`Chart parsed: ${result.rows} rows × ${result.cols} stitches`);
+    const dataUrl = composite.toDataURL('image/png');
+    pendingImageData   = dataUrl;
+    pendingChartSource = 'image';
+    // Also switch the form over to the Photo/Image tab/fields, since the
+    // rendered PDF now behaves exactly like an uploaded chart photo —
+    // total rows/stitches still need to be entered manually, same as any
+    // image-sourced chart.
+    setChartModeTab('image');
+    document.getElementById('upload-label').textContent = '✓ ' + file.name + ' (rendered from PDF)';
+    document.getElementById('upload-area').className = 'has-img';
+
+    label.textContent = 'Tap to import a Stitch Fiddle PDF chart';
+    area.className = '';
+    toast('PDF rendered — enter row/stitch counts, then Save');
 
   } catch (err) {
     console.error('Stitch Fiddle PDF import failed', err);
@@ -1058,111 +1074,6 @@ async function startPdfTextImport(file) {
     area.className     = '';
     toast('PDF read error');
   }
-}
-
-// Reconstruct the chart from individually-positioned frame/dc glyphs,
-// using X-position geometry instead of counting spaces in text (which
-// on-device testing showed is not reliable for this PDF — see comments
-// in startPdfTextImport above).
-function parseStitchFiddleGlyphs(glyphs) {
-  if (glyphs.length === 0) return null;
-
-  // Group glyphs into physical rows by Y position (glyphs on the same
-  // chart row share Y very closely; different rows are further apart).
-  const sorted = glyphs.slice().sort((a, b) => a.y - b.y);
-  const rowGroups = [];
-  let cur = null, curY = null;
-  for (const g of sorted) {
-    if (curY === null || Math.abs(g.y - curY) > 2) {
-      cur = []; rowGroups.push(cur); curY = g.y;
-    }
-    cur.push(g);
-  }
-
-  // Each real chart-row group, sorted left-to-right, must look like:
-  // [color, border, ...dc glyphs..., border, color] with the SAME color
-  // char at both ends ($ or %) and the matching border char ("for $,
-  // # for %) at both ends. Groups that don't match this shape are
-  // discarded — legend glyphs, stray marks, page-number artifacts, etc.
-  const patternRows = [];
-  for (const group of rowGroups) {
-    if (group.length < 4) continue;
-    const g = group.slice().sort((a, b) => a.x - b.x);
-    const first = g[0], second = g[1];
-    const last = g[g.length - 1], secondLast = g[g.length - 2];
-
-    const isColorA = first.ch === '$' && last.ch === '$';
-    const isColorB = first.ch === '%' && last.ch === '%';
-    if (!isColorA && !isColorB) continue;
-    const expectedBorder = isColorA ? '"' : '#';
-    if (second.ch !== expectedBorder || secondLast.ch !== expectedBorder) continue;
-
-    const leftEdge  = second.x;
-    const rightEdge = secondLast.x;
-    if (rightEdge < leftEdge) continue;
-
-    const dcX = g.slice(2, g.length - 2).filter(it => it.ch === '!').map(it => it.x);
-    patternRows.push({ isColorA, leftEdge, rightEdge, dcX, y: group[0].y });
-  }
-
-  if (patternRows.length === 0) return null;
-
-  // Calibrate the true stitch-cell pitch from glyph spacing: whenever two
-  // dc glyphs happen to sit directly next to each other with no blank
-  // stitch between them, the gap between their X positions IS exactly one
-  // cell width. Collect every such gap across the whole chart and take
-  // the smallest value that recurs more than once (the modal spacing) —
-  // robust against the occasional outlier, and doesn't require assuming
-  // any particular row's total stitch count.
-  const gapCounts = new Map(); // rounded gap -> occurrence count
-  for (const r of patternRows) {
-    const xs = r.dcX.slice().sort((a, b) => a - b);
-    for (let i = 1; i < xs.length; i++) {
-      const gap = xs[i] - xs[i - 1];
-      if (gap <= 0.01) continue;
-      const key = Math.round(gap * 4) / 4; // quarter-unit precision
-      gapCounts.set(key, (gapCounts.get(key) || 0) + 1);
-    }
-  }
-  let cellWidth = null;
-  const recurring = Array.from(gapCounts.entries()).filter(([, n]) => n > 1);
-  if (recurring.length > 0) {
-    recurring.sort((a, b) => a[0] - b[0]);
-    cellWidth = recurring[0][0];
-  } else if (gapCounts.size > 0) {
-    cellWidth = Math.min(...gapCounts.keys());
-  }
-  if (!cellWidth || cellWidth <= 0) {
-    // No two dc's ever sit directly adjacent anywhere (unusual) — fall
-    // back to treating the widest row's span as the stitch count implied
-    // by its own border-to-border distance relative to itself; this at
-    // least keeps rows proportionally correct even without true pitch.
-    const maxSpan = Math.max(...patternRows.map(r => r.rightEdge - r.leftEdge));
-    cellWidth = maxSpan > 0 ? maxSpan : 1;
-  }
-
-  // Row order: PDF lists rows top-to-bottom = highest Stitch Fiddle row
-  // number first. Renderer expects cells[0] = row 1 (lowest, worked
-  // first), so sort top-to-bottom then reverse.
-  patternRows.sort((a, b) => a.y - b.y);
-
-  const widths = patternRows.map(r => Math.max(1, Math.round((r.rightEdge - r.leftEdge) / cellWidth) + 1));
-  const cols = Math.max(...widths);
-
-  const cells = patternRows.map((r, i) => {
-    const width = widths[i];
-    const arr = new Array(width).fill(r.isColorA ? 0 : 2); // background (sc)
-    for (const x of r.dcX) {
-      const col = Math.round((x - r.leftEdge) / cellWidth);
-      if (col >= 0 && col < width) arr[col] = r.isColorA ? 1 : 3; // dc
-    }
-    while (arr.length < cols) arr.push(r.isColorA ? 0 : 2); // pad to global max
-    return arr;
-  });
-
-  cells.reverse(); // row 1 first
-
-  return { rows: cells.length, cols, cells };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
