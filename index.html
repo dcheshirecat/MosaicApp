@@ -337,7 +337,7 @@
         <span id="pdf-import-label">Tap to import a Stitch Fiddle PDF chart</span>
       </div>
       <input type="file" id="chart-pdf-file" accept="application/pdf">
-      <div class="hint">Renders the PDF's chart page(s) into a chart image (Stitch Fiddle's PDF only draws the pop-stitch symbols as text — everything else is graphics, so this reads it the same way a person would look at it). Enter row/stitch counts manually after import, same as a photo chart.</div>
+      <div class="hint">Parses the Stitch Fiddle PDF's text layer to extract every cell's color and stitch type. Row and stitch counts are filled in automatically — just set your yarn colors and save.</div>
     </div>
   </div>
 
@@ -930,150 +930,230 @@ document.getElementById('btn-cancel-form').addEventListener('click', () => {
 });
 document.getElementById('btn-new').addEventListener('click', () => openForm(null));
 
-// ── PDF IMPORT ───────────────────────────────────────────────────────────
-let pdfDoc = null; // kept for compat reference
-
-// ── PDF CHART IMPORT (text-layer based) ──────────────────────────────────
+// ── PDF IMPORT (text-layer grid parser) ─────────────────────────────────
+// Stitch Fiddle PDFs encode every cell as a text glyph:
+//   $ / % = Color A / B row marker (not a stitch — just identifies row color)
+//   " / # = border stitch (first and last stitch of each row, always SC)
+//   !     = double crochet / overlay stitch (the X mark)
+//   space = single crochet (background)
+//   &     = foundation chain (row 0)
+// Cell codes: 0=A+SC, 1=A+DC, 2=B+SC, 3=B+DC
 //
-// Stitch Fiddle PDFs encode every stitch as a character in the text layer.
-// The format, confirmed against the actual PDF:
-//
-//   $ = Color A (row marker / stitch in A color)
-//   % = Color B (row marker / stitch in B color)
-//   ! = double crochet / overlay stitch (the X mark)
-//   " = border stitch (right side of $-rows — strip)
-//   # = border stitch (right side of %-rows — strip)
-//   & = foundation chain (skip entire row)
-//   space = single crochet (background stitch)
-//
-// Each pattern row looks like one of:
-//   %# !!! !! #%     (Color B row — starts %, border #, inner, border #, ends %)
-//   $" !! ! "$       (Color A row — starts $, border ", inner, border ", ends $)
-//
-// So: first char = row color ($=A, %=B). Strip first 2 and last 2 chars.
-// Inner: '!' = DC (X stitch), ' ' = SC (background). Nothing else matters.
-//
-// Cell codes used throughout the renderer:
-//   0 = Color A, SC     1 = Color A, DC
-//   2 = Color B, SC     3 = Color B, DC
-//
-// The PDF text layer items come out in VISUAL top-to-bottom order (highest
-// row number first in the Stitch Fiddle numbering). We reverse at the end
-// so cells[0] = row 1 (the bottom row of the chart, worked first).
+// The parser groups all text items by Y baseline, finds the left color
+// marker ($ or %) for each row, then maps every ! to its column using the
+// item's X coordinate.  It deliberately handles both "combined" emission
+// (the whole row in one text item) and "split" emission (each character as
+// a separate item), which varies across pdf.js versions and Stitch Fiddle
+// export options.
 
 async function startPdfTextImport(file) {
   const ok = await pdfjsReady;
-  if (!ok || !window.pdfjsLib) {
-    toast('PDF engine unavailable — check connection and try again');
-    return;
-  }
+  if (!ok || !window.pdfjsLib) { toast('PDF engine unavailable — check connection and try again'); return; }
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc;
 
   const label = document.getElementById('pdf-import-label');
   const area  = document.getElementById('pdf-import-area');
-  label.textContent = 'Rendering PDF pages…';
+  label.textContent = 'Reading PDF chart…';
   area.className = '';
 
   try {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    // On-device diagnostics on a real Stitch Fiddle export showed the
-    // row-color markers ($/%) and border markers ("/#) each appear
-    // EXACTLY ONCE in the whole PDF's text layer — that's the legend key
-    // ("Color A$", "Color B%", etc.), not one occurrence per row. Only
-    // the dc "pop" stitch symbol (!) is drawn as real, repeated text.
-    // Everything else — row borders, background fills, which color each
-    // row is — is vector graphics, not text. There is no text-based way
-    // to recover that structure; three attempts at parsing it (line-
-    // based, whole-blob regex, and glyph-position geometry) all failed
-    // for the same underlying reason. Instead, render each page exactly
-    // as it visually appears and stitch them into one image — the same
-    // approach the app's existing Photo/Image chart mode already uses
-    // successfully, just sourced from a rendered PDF page instead of a
-    // camera photo.
-    const SCALE = 2.5;
-    const FRAME_CHARS = new Set(['$', '%', '"', '#', '!']);
-    let legendBottomY = 0; // page-1 y (in unscaled viewport units) below which the legend ends
-
-    const pageCanvases = [];
-    for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
-      const page = await doc.getPage(pageNo);
-      const viewport = page.getViewport({ scale: SCALE });
-
-      const canvas = document.createElement('canvas');
-      canvas.width  = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      if (pageNo === 1) {
-        // Find where the legend key ends so it can be cropped out — a
-        // legend line included in the chart image would throw off the
-        // row-highlight overlay's alignment, since that overlay divides
-        // the image height evenly by total row count.
-        const vp1 = page.getViewport({ scale: 1 });
-        const tc  = await page.getTextContent({ includeMarkedContent: false });
-        for (const item of tc.items) {
-          if (!item.str || !item.transform) continue;
-          const s = item.str.trim();
-          if (s.length !== 1 || !FRAME_CHARS.has(s)) continue;
-          const topY = vp1.height - item.transform[5];
-          if (topY > legendBottomY) legendBottomY = topY;
-        }
-        if (legendBottomY > 0) {
-          const cropTopPx = Math.min(canvas.height - 10, Math.round((legendBottomY + 14) * SCALE));
-          const cropped = document.createElement('canvas');
-          cropped.width  = canvas.width;
-          cropped.height = canvas.height - cropTopPx;
-          cropped.getContext('2d').drawImage(canvas, 0, cropTopPx, canvas.width, cropped.height, 0, 0, canvas.width, cropped.height);
-          pageCanvases.push(cropped);
-          continue;
-        }
-      }
-      pageCanvases.push(canvas);
+    const pageItems = [];
+    for (let pn = 1; pn <= doc.numPages; pn++) {
+      const page = await doc.getPage(pn);
+      const tc = await page.getTextContent({ includeMarkedContent: false });
+      pageItems.push(tc.items);
     }
 
-    // Stack all page renders into one tall composite image, matching what
-    // the existing image-chart mode expects (a single image spanning the
-    // whole chart).
-    const totalWidth  = Math.max(...pageCanvases.map(c => c.width));
-    const totalHeight = pageCanvases.reduce((sum, c) => sum + c.height, 0);
-    const composite = document.createElement('canvas');
-    composite.width  = totalWidth;
-    composite.height = totalHeight;
-    const cctx = composite.getContext('2d');
-    cctx.fillStyle = '#ffffff';
-    cctx.fillRect(0, 0, totalWidth, totalHeight);
-    let yOffset = 0;
-    for (const c of pageCanvases) {
-      cctx.drawImage(c, 0, yOffset);
-      yOffset += c.height;
+    const result = parseStitchFiddlePdfItems(pageItems);
+    if (!result) {
+      label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart found`;
+      area.className = '';
+      toast('No Stitch Fiddle chart found in this PDF');
+      return;
     }
 
-    const dataUrl = composite.toDataURL('image/png');
-    pendingImageData   = dataUrl;
-    pendingChartSource = 'image';
-    // Also switch the form over to the Photo/Image tab/fields, since the
-    // rendered PDF now behaves exactly like an uploaded chart photo —
-    // total rows/stitches still need to be entered manually, same as any
-    // image-sourced chart.
-    setChartModeTab('image');
-    document.getElementById('upload-label').textContent = '✓ ' + file.name + ' (rendered from PDF)';
-    document.getElementById('upload-area').className = 'has-img';
-
-    label.textContent = 'Tap to import a Stitch Fiddle PDF chart';
-    area.className = '';
-    toast('PDF rendered — enter row/stitch counts, then Save');
-
+    document.getElementById('f-rows').value    = result.rows;
+    document.getElementById('f-stitches').value = result.cols;
+    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells, sourceRows: result.sourceRows };
+    pendingChartSource = 'grid';
+    label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts`;
+    area.className     = 'has-grid';
+    setChartModeTab('pdf');
+    toast(`Chart imported: ${result.rows} rows × ${result.cols} stitches`);
   } catch (err) {
-    console.error('Stitch Fiddle PDF import failed', err);
-    label.textContent  = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
-    area.className     = '';
+    console.error('PDF import error', err);
+    label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
+    area.className    = '';
     toast('PDF read error');
   }
+}
+
+function parseStitchFiddlePdfItems(pageItems) {
+  const pageCandidates = [];
+
+  for (let pageIndex = 0; pageIndex < pageItems.length; pageIndex++) {
+    const raw = pageItems[pageIndex] || [];
+    if (raw.length < 10) continue;
+
+    const items = raw.map(it => ({
+      x:     +((it.transform && it.transform[4]) || 0),
+      y:     +((it.transform && it.transform[5]) || 0),
+      width: +(it.width || 0),
+      str:   String(it.str || '')
+    })).filter(it => it.str.trim().length > 0);
+
+    if (items.length < 20) continue;
+
+    // ── 1. Group all items by Y baseline (±1.5 unit tolerance) ─────────────
+    items.sort((a, b) => a.y - b.y || a.x - b.x);
+    const yGroups = [];
+    for (const it of items) {
+      const last = yGroups.length ? yGroups[yGroups.length - 1] : null;
+      if (!last || Math.abs(last.y - it.y) > 1.5) {
+        yGroups.push({ y: it.y, items: [it] });
+      } else {
+        last.items.push(it);
+      }
+    }
+
+    // ── 2. Find chart row groups ────────────────────────────────────────────
+    // Each chart row has a $ or % as its leftmost significant item, sitting
+    // in the left ~45 % of the page.  The regex is intentionally single-char
+    // so it matches whether the PDF emits "$\"" as one combined item or as
+    // two separate items "$" and "\"".
+    const pageMaxX = Math.max(...items.map(it => it.x + (it.width || 0)));
+    const leftEdge = pageMaxX * 0.45;
+
+    const chartGroups = [];
+    for (const g of yGroups) {
+      const colorItem = g.items.find(it =>
+        (it.str[0] === '$' || it.str[0] === '%') && it.x < leftEdge
+      );
+      if (!colorItem) continue;
+      chartGroups.push({ y: g.y, colorItem, items: g.items });
+    }
+
+    if (chartGroups.length < 10) continue;
+
+    // ── 3. leftX — median X of color markers across all chart rows ──────────
+    const leftXArr = chartGroups.map(g => g.colorItem.x).sort((a, b) => a - b);
+    const leftX    = leftXArr[Math.floor(leftXArr.length / 2)];
+
+    // ── 4. Character pitch ─────────────────────────────────────────────────
+    // Primary: item.width / item.str.length for multi-char items inside the
+    // chart area.  Fallback: vertical row spacing (Stitch Fiddle uses square
+    // cells, so horizontal and vertical pitch are equal).
+    const measuredPitches = items
+      .filter(it => it.str.length >= 2 && it.width > 0 && it.x >= leftX - 5)
+      .map(it => it.width / it.str.length)
+      .filter(p => p > 0.3 && p < 20);
+    measuredPitches.sort((a, b) => a - b);
+    const measuredPitch = measuredPitches.length >= 3
+      ? measuredPitches[Math.floor(measuredPitches.length / 2)] : null;
+
+    const yArr  = chartGroups.map(g => g.y).sort((a, b) => a - b);
+    const yGaps = [];
+    for (let i = 1; i < yArr.length; i++) {
+      const d = yArr[i] - yArr[i - 1];
+      if (d > 0.3 && d < 20) yGaps.push(d);
+    }
+    yGaps.sort((a, b) => a - b);
+    const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
+
+    const charPitch = measuredPitch || rowPitch;
+    if (!charPitch || !Number.isFinite(charPitch) || charPitch <= 0) continue;
+
+    // ── 5. Column count from right color markers ────────────────────────────
+    // The right $ / % marker sits at physPos = cols + 1 (where physPos 0 is
+    // the left $ / % marker, and physPos 1..cols are the actual stitches).
+    // Therefore cols = round((rightX − leftX) / charPitch) − 1.
+    const rightXArr = chartGroups.map(g => {
+      for (let i = g.items.length - 1; i >= 0; i--) {
+        const s    = g.items[i].str;
+        const last = s[s.length - 1];
+        if ((last === '$' || last === '%') && g.items[i].x > leftX + charPitch * 10)
+          return g.items[i].x;
+      }
+      return null;
+    }).filter(x => x !== null).sort((a, b) => a - b);
+
+    let cols = 186; // safe default for this Stitch Fiddle format
+    if (rightXArr.length >= 5) {
+      const rightX = rightXArr[Math.floor(rightXArr.length / 2)];
+      const est    = Math.round((rightX - leftX) / charPitch) - 1;
+      if (est >= 10 && est <= 400) cols = est;
+    }
+
+    // ── 6. Parse each row into a cells array ──────────────────────────────
+    const candidates = [];
+    for (const g of chartGroups) {
+      const colorChar  = g.colorItem.str[0]; // '$' or '%'
+      const foundation = g.colorItem.str.startsWith('$&') ||
+        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + charPitch * 3);
+
+      // Row number label: the digit-only item closest to leftX on its left
+      const labelItem = g.items
+        .filter(it => /^\d+$/.test(it.str.trim()) &&
+          it.x < leftX - charPitch * 0.3 &&
+          it.x > leftX - charPitch * 25)
+        .sort((a, b) => b.x - a.x)[0];
+      const sourceRow = labelItem ? parseInt(labelItem.str.trim(), 10) : null;
+
+      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
+
+      for (const it of g.items) {
+        if (!it.str.includes('!')) continue;
+        if (it.x < leftX - charPitch * 1.5 || it.x > leftX + (cols + 3) * charPitch) continue;
+        const startPhysical = Math.round((it.x - leftX) / charPitch);
+        for (let i = 0; i < it.str.length; i++) {
+          if (it.str[i] !== '!') continue;
+          // physPos 0 = $ color marker → col −1 (skipped)
+          // physPos 1 = first stitch   → col 0
+          const col = startPhysical + i - 1;
+          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
+        }
+      }
+
+      candidates.push({ y: g.y, sourceRow, cells, colorChar, foundation });
+    }
+
+    if (candidates.length < 10) continue;
+
+    const uniqueNumbered = new Map();
+    for (const r of candidates) {
+      if (r.sourceRow !== null) uniqueNumbered.set(r.sourceRow, r);
+    }
+
+    pageCandidates.push({ pageIndex, candidates, uniqueNumbered, cols });
+  }
+
+  if (!pageCandidates.length) return null;
+
+  // Best page: most candidate rows
+  pageCandidates.sort((a, b) => b.candidates.length - a.candidates.length);
+  const best = pageCandidates[0];
+
+  let finalRows;
+  if (best.uniqueNumbered.size >= 10) {
+    // Sort descending by sourceRow: highest number = visual top = cells[0]
+    finalRows = Array.from(best.uniqueNumbered.values())
+      .sort((a, b) => b.sourceRow - a.sourceRow);
+  } else {
+    // Fallback: PDF Y increases upward, so higher Y = visual top (highest row)
+    finalRows = best.candidates.slice().sort((a, b) => b.y - a.y);
+  }
+
+  if (finalRows.length < 10) return null;
+
+  return {
+    rows:       finalRows.length,
+    cols:       best.cols,
+    cells:      finalRows.map(r => r.cells),
+    sourceRows: finalRows.map(r => r.sourceRow)
+  };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
