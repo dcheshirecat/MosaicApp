@@ -934,21 +934,24 @@ document.getElementById('btn-new').addEventListener('click', () => openForm(null
 let pdfDoc = null; // kept for compat reference
 
 // ── PDF TEXT IMPORT ──────────────────────────────────────────────────────
-// Stitch Fiddle PDFs carry a complete text layer that encodes every stitch
-// as a character. We extract that text with pdf.js and parse it directly —
-// no image rendering, no pixel sampling, no cropping needed.
+// Stitch Fiddle PDFs are parsed in two stages:
 //
-// Symbol key (from the PDF legend):
-//   $ = Color A row-boundary / stitch marker
-//   % = Color B row-boundary / stitch marker
-//   ! = Double crochet (overlay/spike stitch, shown as X in the chart)
-//   space = Single crochet (background stitch)
-//   " # = Border stitches (strip from each end of a row)
-//   & = Chain (foundation row — skip entirely)
+//  1. locateStitchFiddleLayout() uses the text layer to find the chart's
+//     geometry (left/right frame markers, row pitch, row count) and to
+//     record which cells are double-crochet stitches. Stitch Fiddle draws
+//     BOTH ' and ! for a double crochet — they're the same stitch, just
+//     contrast-matched light/dark glyph variants so the mark stays visible
+//     against both light and dark yarn colors. A plain single-crochet cell
+//     gets NO glyph at all — its look comes entirely from its background
+//     fill, not from any character. So the text layer only ever tells us
+//     STITCH TYPE, never color.
 //
-// Each pattern row looks like:   %# !! !! !!! #%   or   $" !! "$
-// First char = row color ($=A, %=B), next char = border (strip),
-// inner content = stitches, last two chars = border+color (strip).
+//  2. sampleCellColorsFromRender() renders the located page and samples the
+//     fill color at every cell's center, classified against the chart's own
+//     two dominant colors. This is necessary because Stitch Fiddle fills
+//     each cell as its own individually-colored rectangle — color is NOT
+//     one flat value per row, so it can only be read from the rendered
+//     pixels, not inferred from a row-level marker.
 //
 // cell code: 0 = A/sc, 1 = A/dc, 2 = B/sc, 3 = B/dc
 //   (matches the existing renderer's expectation exactly)
@@ -969,28 +972,39 @@ async function startPdfTextImport(file) {
   try {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-    const pageItems = [];
+    const pages = [];
+    const pageItemsList = [];
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
       const page = await doc.getPage(pageNo);
       const tc = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false });
-      pageItems.push(tc.items || []);
+      pages.push(page);
+      pageItemsList.push(tc.items || []);
     }
 
-    const result = parseStitchFiddlePdfItems(pageItems);
-    if (!result) {
+    const layout = locateStitchFiddleLayout(pageItemsList);
+    if (!layout) {
       label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart grid found`;
       area.className = '';
       toast('No Stitch Fiddle chart grid found');
       return;
     }
 
-    document.getElementById('f-rows').value = result.rows;
-    document.getElementById('f-stitches').value = result.cols;
-    pendingChartGrid = { rows: result.rows, cols: result.cols, cells: result.cells, sourceRows: result.sourceRows };
+    label.textContent = 'Reading cell colors…';
+    const sampled = await sampleCellColorsFromRender(pages[layout.pageIndex], layout);
+
+    document.getElementById('f-rows').value = sampled.rows;
+    document.getElementById('f-stitches').value = sampled.cols;
+    pendingChartGrid = { rows: sampled.rows, cols: sampled.cols, cells: sampled.cells, sourceRows: layout.sourceRows };
     pendingChartSource = 'grid';
-    label.textContent = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts (all ${doc.numPages} pages scanned)`;
+
+    // Prefill the color swatches with the colors actually read from the
+    // PDF, so the tracker matches the real chart right away.
+    if (sampled.colorAHex) setColorPickerValue('a', sampled.colorAHex);
+    if (sampled.colorBHex) setColorPickerValue('b', sampled.colorBHex);
+
+    label.textContent = `✓ ${file.name} — ${sampled.rows} rows × ${sampled.cols} sts (all ${doc.numPages} pages scanned)`;
     area.className = 'has-grid';
-    toast(`Chart parsed: ${result.rows} rows × ${result.cols} stitches`);
+    toast(`Chart parsed: ${sampled.rows} rows × ${sampled.cols} stitches`);
   } catch (err) {
     console.error('Stitch Fiddle PDF import failed', err);
     label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
@@ -999,27 +1013,19 @@ async function startPdfTextImport(file) {
   }
 }
 
-// Robust Stitch Fiddle parser. Stitch Fiddle's PDF text layer is NOT one line
-// per chart row: spaces and ! glyphs are often emitted as many separate text
-// items. We therefore use their real PDF coordinates instead of joining lines.
-// This is deliberately independent of page number and of PDF.js text-item
-// ordering.
-function parseStitchFiddlePdfItems(pageItems) {
-  // Stitch Fiddle's text layer is a *cell-positioned* drawing, not a set of
-  // logical text lines.  In particular, a row can be emitted as:
-  //   "%#" + "!!!!!" + "#%"
-  // or as "%#!" when an X touches the left border, and blank rows may be a
-  // single long "$&...&$" item.  Therefore the parser below works entirely
-  // from the PDF coordinates.
+// Robust Stitch Fiddle geometry + stitch-type parser. Stitch Fiddle's PDF
+// text layer is NOT one line per chart row: spaces and glyphs are often
+// emitted as many separate text items. We therefore use their real PDF
+// coordinates instead of joining lines. This is deliberately independent
+// of page number and of PDF.js text-item ordering.
+function locateStitchFiddleLayout(pageItemsList) {
   const pageCandidates = [];
 
-  for (let pageIndex = 0; pageIndex < pageItems.length; pageIndex++) {
-    const raw = pageItems[pageIndex] || [];
+  for (let pageIndex = 0; pageIndex < pageItemsList.length; pageIndex++) {
+    const raw = pageItemsList[pageIndex] || [];
     const items = raw.map(it => ({
-      page: pageIndex,
       x: Number(it.transform && it.transform[4]) || 0,
       y: Number(it.transform && it.transform[5]) || 0,
-      width: Number(it.width) || 0,
       str: String(it.str || '')
     })).filter(it => it.str.length);
 
@@ -1030,33 +1036,30 @@ function parseStitchFiddlePdfItems(pageItems) {
     );
     if (leftMarkers.length < 10) continue;
 
-    // Right frame normally ends in "#$", "#%", '"$', or '&$'.  It can also
-    // have X glyphs immediately before it, so suffix matching is intentional.
+    // Right frame normally ends in "#$", "#%", '"$', or '&$'. It can also
+    // have DC glyphs immediately before it, so suffix matching is intentional.
     const rightMarkers = items.filter(it =>
       it.x > 0.45 * 600 && /["#&][$%]$/.test(it.str)
     );
 
-    // Group left markers by their actual baseline.  This yields one record per
-    // source row even when PDF.js has split the row into many text items.
+    // Group left markers by their actual baseline. This yields one record
+    // per source row even when PDF.js has split the row into many items.
     leftMarkers.sort((a,b) => a.y - b.y || a.x - b.x);
     const rowsByY = [];
     for (const m of leftMarkers) {
       let g = rowsByY.length ? rowsByY[rowsByY.length - 1] : null;
       if (!g || Math.abs(g.y - m.y) > 1.0) {
-        g = { y: m.y, left: m, items: [] };
+        g = { y: m.y, left: m };
         rowsByY.push(g);
       } else if (m.x < g.left.x) {
         g.left = m;
       }
     }
-
     if (rowsByY.length < 10) continue;
 
-    // Use the repeated right-frame X positions to determine the physical
-    // chart width.  The gap between the left and right color markers spans
-    // exactly the number of actual stitches.  This PDF therefore resolves to
-    // 186 stitches (not 184): the $/% markers are metadata, while the "/#
-    // border glyphs are the first/last actual stitch columns.
+    // Use the repeated right-frame positions to determine the physical
+    // chart width: the gap between the left and right markers spans exactly
+    // the number of actual stitches.
     const rightXs = rightMarkers.map(it => it.x).filter(Number.isFinite);
     const rightX = rightXs.length
       ? rightXs.sort((a,b) => a-b)[Math.floor(rightXs.length / 2)]
@@ -1064,7 +1067,8 @@ function parseStitchFiddlePdfItems(pageItems) {
     const leftXs = rowsByY.map(g => g.left.x);
     const leftX = leftXs.sort((a,b) => a-b)[Math.floor(leftXs.length / 2)];
 
-    // Row pitch is the median separation of adjacent chart baselines.
+    // Row pitch is the median separation of adjacent chart baselines — also
+    // used as the column pitch, since Stitch Fiddle's grid cells are square.
     const ys = rowsByY.map(g => g.y).sort((a,b) => a-b);
     const gaps = [];
     for (let i = 1; i < ys.length; i++) {
@@ -1079,19 +1083,14 @@ function parseStitchFiddlePdfItems(pageItems) {
         !Number.isFinite(rowPitch) || rightX <= leftX) continue;
 
     let cols = Math.round((rightX - leftX) / rowPitch);
-    // Stitch Fiddle's color markers sit just outside the actual stitch grid;
-    // the distance between them is the stitch count.  Be conservative for
-    // malformed/non-Stitch-Fiddle pages.
     if (cols < 2 || cols > 1000) continue;
 
     const candidates = [];
-
     for (const g of rowsByY) {
       const rowItems = items.filter(it => Math.abs(it.y - g.y) <= 1.0);
       const left = g.left;
       const colorChar = left.str[0];
       if (colorChar !== '$' && colorChar !== '%') continue;
-      const foundation = left.str.startsWith('$&');
 
       // Find the numeric row label on either side, when available.
       const labelItem = rowItems
@@ -1099,47 +1098,39 @@ function parseStitchFiddlePdfItems(pageItems) {
         .sort((a,b) => Math.abs(a.x-leftX)-Math.abs(b.x-leftX))[0];
       const sourceRow = labelItem ? parseInt(labelItem.str, 10) : null;
 
-      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
-
-      // Actual stitch columns are physical positions 1..cols. Position 0 is
-      // the $/% metadata marker and position cols+1 is the right marker.
+      // Both ' and ! mark a double-crochet cell (see file header note) — a
+      // plain single-crochet cell has no glyph here at all.
+      const dcCols = new Set();
       for (const it of rowItems) {
         if (it.x < leftX - 2 || it.x > rightX + rowPitch * 2) continue;
         const str = it.str;
-        if (!str.includes('!')) continue;
-
-        // Stitch Fiddle uses a monospaced cell font. PDF.js gives the X of the
-        // first glyph; each subsequent glyph advances by rowPitch. This keeps
-        // every X at its original physical chart column, including Xs fused
-        // directly onto a border item.
+        if (!/['!]/.test(str)) continue;
+        // Stitch Fiddle uses a monospaced cell font. PDF.js gives the X of
+        // the first glyph; each subsequent glyph advances by rowPitch. This
+        // keeps every glyph at its original physical chart column, including
+        // ones fused directly onto a border item.
         const startPhysical = Math.round((it.x - leftX) / rowPitch);
         for (let i = 0; i < str.length; i++) {
-          if (str[i] !== '!') continue;
+          if (str[i] !== '!' && str[i] !== "'") continue;
           const physicalPos = startPhysical + i;
           const col = physicalPos - 1; // physical 1 = first actual stitch
-          if (col >= 0 && col < cols) {
-            cells[col] = colorChar === '$' ? 1 : 3;
-          }
+          if (col >= 0 && col < cols) dcCols.add(col);
         }
       }
 
-      candidates.push({ y: g.y, sourceRow, cells, colorChar, foundation });
+      candidates.push({ y: g.y, sourceRow, dcCols });
     }
 
     // This is the actual chart page if it contains a complete numeric row
-    // sequence.  A legend page has only a handful of symbols and is rejected.
+    // sequence. A legend page has only a handful of symbols and is rejected.
     const numbered = candidates.filter(r => Number.isInteger(r.sourceRow));
     const uniqueRows = new Map();
     for (const r of numbered) uniqueRows.set(r.sourceRow, r);
 
     if (uniqueRows.size >= 20) {
       pageCandidates.push({
-        pageIndex,
-        rows: Array.from(uniqueRows.values()),
-        cols,
-        leftX,
-        rightX,
-        rowPitch
+        pageIndex, rows: Array.from(uniqueRows.values()),
+        cols, leftX, rightX, rowPitch
       });
     }
   }
@@ -1150,12 +1141,11 @@ function parseStitchFiddlePdfItems(pageItems) {
   pageCandidates.sort((a,b) => b.rows.length - a.rows.length);
   const best = pageCandidates[0];
 
-  const sourceRows = best.rows
-    .slice()
-    .sort((a,b) => a.sourceRow - b.sourceRow);
+  const sourceRows = best.rows.slice().sort((a,b) => a.sourceRow - b.sourceRow);
 
-  // We expect this PDF to contain source rows 0..201.  Do not silently pad or
-  // invent rows: if a row number is missing, report the import as incomplete.
+  // We expect this PDF to contain a complete 0..N source row sequence. Do
+  // not silently pad or invent rows: if a row number is missing, report the
+  // import as incomplete.
   const minRow = sourceRows.length ? sourceRows[0].sourceRow : null;
   const maxRow = sourceRows.length ? sourceRows[sourceRows.length - 1].sourceRow : null;
   const expectedCount = (minRow === 0 && maxRow != null) ? maxRow + 1 : sourceRows.length;
@@ -1171,17 +1161,136 @@ function parseStitchFiddlePdfItems(pageItems) {
   const ordered = sourceRows.slice().sort((a,b) => b.sourceRow - a.sourceRow);
 
   return {
-    rows: ordered.length,
+    pageIndex: best.pageIndex,
     cols: best.cols,
-    cells: ordered.map(r => r.cells),
-    sourceRows: ordered.map(r => r.sourceRow)
+    leftX: best.leftX,
+    rowPitch: best.rowPitch,
+    sourceRows: ordered.map(r => r.sourceRow),
+    rowsOrdered: ordered.map(r => ({ y: r.y, dcCols: r.dcCols }))
   };
 }
 
-// Backward-compatible text parser retained for older callers. It is no longer
-// used for PDF imports because coordinate parsing is required for Stitch Fiddle.
-function parseStitchFiddleText(text) {
-  return null;
+// Renders the located chart page and samples the fill color at the center
+// of every cell, classifying each against the chart's own two dominant
+// colors. Stitch Fiddle fills every cell as its own colored rectangle (not
+// one flat color per row), so this is the only reliable way to read
+// per-cell color — the text layer alone only tells us stitch TYPE.
+async function sampleCellColorsFromRender(page, layout) {
+  const { cols, leftX, rowPitch, rowsOrdered } = layout;
+  const rows = rowsOrdered.length;
+
+  // Render at a scale that gives each cell a handful of real pixels to
+  // sample from, without producing an unreasonably large canvas.
+  const targetCellPx = 10;
+  const scale = Math.max(1, Math.min(4, targetCellPx / rowPitch));
+
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+  function pixelAt(px, py) {
+    px = Math.max(0, Math.min(canvas.width - 1, Math.round(px)));
+    py = Math.max(0, Math.min(canvas.height - 1, Math.round(py)));
+    const idx = (py * canvas.width + px) * 4;
+    return [imgData[idx], imgData[idx+1], imgData[idx+2]];
+  }
+
+  // Sample a small cross of points around the estimated cell center and
+  // return the most common one — this avoids landing on a grid line or a
+  // DC glyph stroke instead of the actual background fill. The vertical
+  // offsets are biased above the text baseline since that's where the
+  // cell's visual center sits relative to a typical glyph baseline.
+  function sampleCell(pdfX, pdfY) {
+    const offsets = [ [0, 0.30], [0, 0.55], [-0.22, 0.42], [0.22, 0.42] ];
+    const samples = offsets.map(([dx, dy]) => {
+      const [vx, vy] = viewport.convertToViewportPoint(
+        pdfX + dx * rowPitch, pdfY + dy * rowPitch
+      );
+      return pixelAt(vx, vy);
+    });
+    const counts = new Map();
+    for (const s of samples) {
+      const key = s.join(',');
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let best = samples[0], bestCount = 0;
+    for (const s of samples) {
+      const c = counts.get(s.join(','));
+      if (c > bestCount) { bestCount = c; best = s; }
+    }
+    return best;
+  }
+
+  // Collect one raw sample per cell first, so we can find the chart's two
+  // dominant colors before classifying anything.
+  const rawGrid = [];
+  for (let r = 0; r < rows; r++) {
+    const rowY = rowsOrdered[r].y;
+    const rowSamples = [];
+    for (let c = 0; c < cols; c++) {
+      const cellX = leftX + (c + 1) * rowPitch; // matches the glyph column formula
+      rowSamples.push(sampleCell(cellX, rowY));
+    }
+    rawGrid.push(rowSamples);
+  }
+
+  // Find the two dominant colors (Color A / Color B) via a quantized
+  // histogram, ignoring near-black/near-white samples — those are almost
+  // always grid lines or glyph ink rather than a genuine fill color.
+  const buckets = new Map();
+  for (const rowSamples of rawGrid) {
+    for (const [r,g,b] of rowSamples) {
+      const lum = 0.3*r + 0.59*g + 0.11*b;
+      if (lum < 12 || lum > 248) continue;
+      const key = [Math.round(r/8)*8, Math.round(g/8)*8, Math.round(b/8)*8].join(',');
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    }
+  }
+  const ranked = Array.from(buckets.entries()).sort((a,b) => b[1]-a[1]);
+  const parseKey = k => k.split(',').map(Number);
+  const distSq = (a,b) => (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2;
+
+  let colorA = ranked.length ? parseKey(ranked[0][0]) : [245,230,200];
+  let colorB = null;
+  for (let i = 1; i < ranked.length; i++) {
+    const cand = parseKey(ranked[i][0]);
+    if (distSq(cand, colorA) > 40*40) { colorB = cand; break; }
+  }
+  if (!colorB) colorB = [42,127,127];
+
+  const classify = rgb => distSq(rgb, colorA) <= distSq(rgb, colorB) ? 0 : 2;
+  const toHex = ([r,g,b]) => '#' + [r,g,b]
+    .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    const dcCols = rowsOrdered[r].dcCols;
+    const rowCells = [];
+    for (let c = 0; c < cols; c++) {
+      rowCells.push(classify(rawGrid[r][c]) + (dcCols.has(c) ? 1 : 0));
+    }
+    cells.push(rowCells);
+  }
+
+  // Sanity check only (non-fatal): genuine mosaic overlay charts never
+  // stack a DC directly above another DC in the same column.
+  let adjacencyViolations = 0;
+  for (let r = 1; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const aDc = cells[r][c] === 1 || cells[r][c] === 3;
+      const bDc = cells[r-1][c] === 1 || cells[r-1][c] === 3;
+      if (aDc && bDc) adjacencyViolations++;
+    }
+  }
+  if (adjacencyViolations > 0) {
+    console.warn(`Stitch Fiddle import: ${adjacencyViolations} vertically-adjacent DC pairs detected — double-check the imported chart against the PDF`);
+  }
+
+  return { rows, cols, cells, colorAHex: toHex(colorA), colorBHex: toHex(colorB) };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
