@@ -1042,65 +1042,100 @@ function parseStitchFiddlePdfItems(pageItems) {
     const leftXArr = chartGroups.map(g => g.colorItem.x).sort((a, b) => a - b);
     const leftX    = leftXArr[Math.floor(leftXArr.length / 2)];
 
-    // ── 4. Reconstruct each row's exact stitch text by character order ──────
-    // Pixel-position math (dividing X coordinates by an estimated character
-    // width) is fragile: a slightly-off pitch silently drops or misplaces
-    // "!" marks (turning the picture into flat rows of color) and throws off
-    // the stitch count (stretching the chart to way more columns than it
-    // actually has). Instead, sort every text item in the row left-to-right
-    // starting at that row's own color marker and concatenate their strings
-    // directly — this reconstructs the exact character sequence Stitch
-    // Fiddle encoded, with no pixel estimation involved.
-    const rowContents = [];
-    for (const g of chartGroups) {
-      const colorChar = g.colorItem.str[0]; // '$' or '%'
-      const sortedItems = g.items.slice().sort((a, b) => a.x - b.x);
-      const rowItems = sortedItems.filter(it => it.x >= g.colorItem.x - 0.5);
-      const rowStr = rowItems.map(it => it.str).join('');
-      if (rowStr[0] !== colorChar) continue; // malformed row, skip
+    // ── 4. Character pitch ─────────────────────────────────────────────────
+    // Background/single-crochet cells are usually NOT real space characters
+    // in these PDFs — they're just a horizontal position skip with no glyph
+    // at all — so the gaps between items must be measured in pixels and
+    // converted to cell counts; string concatenation alone loses them.
+    // Primary source: the width of solo single-character items — a lone
+    // glyph's own rendered width IS exactly one cell's width, with no
+    // averaging-over-a-run bias. Secondary: width/length of multi-char runs.
+    // Fallback: vertical row spacing (cells are square).
+    const singleCharPitches = items
+      .filter(it => it.str.length === 1 && it.width > 0)
+      .map(it => it.width)
+      .filter(p => p > 0.3 && p < 20);
+    singleCharPitches.sort((a, b) => a - b);
+    const singlePitch = singleCharPitches.length >= 5
+      ? singleCharPitches[Math.floor(singleCharPitches.length / 2)] : null;
 
-      let content = rowStr.slice(1);
-      const lastCh = content[content.length - 1];
-      if (lastCh === '$' || lastCh === '%') content = content.slice(0, -1);
+    const measuredPitches = items
+      .filter(it => it.str.length >= 2 && it.width > 0 && it.x >= leftX - 5)
+      .map(it => it.width / it.str.length)
+      .filter(p => p > 0.3 && p < 20);
+    measuredPitches.sort((a, b) => a - b);
+    const measuredPitch = measuredPitches.length >= 3
+      ? measuredPitches[Math.floor(measuredPitches.length / 2)] : null;
+
+    const yArr  = chartGroups.map(g => g.y).sort((a, b) => a - b);
+    const yGaps = [];
+    for (let i = 1; i < yArr.length; i++) {
+      const d = yArr[i] - yArr[i - 1];
+      if (d > 0.3 && d < 20) yGaps.push(d);
+    }
+    yGaps.sort((a, b) => a - b);
+    const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
+
+    const charPitch = singlePitch || measuredPitch || rowPitch;
+    if (!charPitch || !Number.isFinite(charPitch) || charPitch <= 0) continue;
+
+    // ── 5. Column count from right color markers ────────────────────────────
+    // The right $ / % marker sits at physPos = cols + 1 (where physPos 0 is
+    // the left $ / % marker, and physPos 1..cols are the actual stitches).
+    // Therefore cols = physPos of the right marker − 1.
+    const rightPhysPosArr = chartGroups.map(g => {
+      for (let i = g.items.length - 1; i >= 0; i--) {
+        const s    = g.items[i].str;
+        const last = s[s.length - 1];
+        if ((last === '$' || last === '%') && g.items[i].x > leftX + charPitch * 10) {
+          const itemStartPhysPos = Math.round((g.items[i].x - leftX) / charPitch);
+          return itemStartPhysPos + (s.length - 1); // marker is the last char of this item
+        }
+      }
+      return null;
+    }).filter(x => x !== null).sort((a, b) => a - b);
+
+    let cols = 186; // safe default for this Stitch Fiddle format
+    if (rightPhysPosArr.length >= 5) {
+      const rightPhysPos = rightPhysPosArr[Math.floor(rightPhysPosArr.length / 2)];
+      const est = rightPhysPos - 1;
+      if (est >= 10 && est <= 400) cols = est;
+    }
+
+    // ── 6. Parse each row into a cells array ──────────────────────────────
+    // Every character is placed by its own pixel position (physPos, relative
+    // to this row's own color marker), not by concatenating strings — that's
+    // what correctly accounts for the un-rendered background-cell gaps.
+    const candidates = [];
+    for (const g of chartGroups) {
+      const colorChar  = g.colorItem.str[0]; // '$' or '%'
+      const foundation = g.colorItem.str.startsWith('$&') ||
+        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + charPitch * 3);
 
       // Row number label: the digit-only item closest to leftX on its left
       const labelItem = g.items
-        .filter(it => /^\d+$/.test(it.str.trim()) && it.x < leftX - 1)
+        .filter(it => /^\d+$/.test(it.str.trim()) &&
+          it.x < leftX - charPitch * 0.3 &&
+          it.x > leftX - charPitch * 25)
         .sort((a, b) => b.x - a.x)[0];
       const sourceRow = labelItem ? parseInt(labelItem.str.trim(), 10) : null;
-      const foundation = content.slice(0, 3).includes('&');
 
-      rowContents.push({ y: g.y, sourceRow, colorChar, content, foundation });
-    }
+      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
 
-    if (rowContents.length < 10) continue;
-
-    // ── 5. Column count — the most common (mode) stitch-text length across
-    //    all rows. Using the actual reconstructed character count, rather
-    //    than a pixel-based estimate, is what keeps the stitch count exact.
-    const lenCounts = new Map();
-    for (const r of rowContents) lenCounts.set(r.content.length, (lenCounts.get(r.content.length) || 0) + 1);
-    let cols = 186, bestCount = 0; // 186 only used if something goes very wrong below
-    for (const [len, count] of lenCounts) {
-      if (count > bestCount) { bestCount = count; cols = len; }
-    }
-
-    // ── 6. Build each row's cells array, aligned to the canonical width ─────
-    const candidates = [];
-    for (const r of rowContents) {
-      let content = r.content;
-      if (content.length !== cols) {
-        // Minor noise in extraction (a stray/missing character on an
-        // otherwise-good row) — pad or trim from the right so rows stay
-        // aligned at the left border stitch instead of skewing the design.
-        content = content.length > cols
-          ? content.slice(0, cols)
-          : content.padEnd(cols, ' ');
+      for (const it of g.items) {
+        if (!it.str.includes('!')) continue;
+        if (it.x < leftX - charPitch * 1.5 || it.x > leftX + (cols + 3) * charPitch) continue;
+        const startPhysical = Math.round((it.x - g.colorItem.x) / charPitch);
+        for (let i = 0; i < it.str.length; i++) {
+          if (it.str[i] !== '!') continue;
+          // physPos 0 = $ color marker → col −1 (skipped)
+          // physPos 1 = first stitch   → col 0
+          const col = startPhysical + i - 1;
+          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
+        }
       }
-      const base = r.colorChar === '$' ? 0 : 2;
-      const dc   = r.colorChar === '$' ? 1 : 3;
-      const cells = Array.from(content, ch => ch === '!' ? dc : base);
-      candidates.push({ y: r.y, sourceRow: r.sourceRow, cells, colorChar: r.colorChar, foundation: r.foundation });
+
+      candidates.push({ y: g.y, sourceRow, cells, colorChar, foundation });
     }
 
     if (candidates.length < 10) continue;
