@@ -307,7 +307,7 @@
       <button type="button" class="symbol-choice" data-symbol="✛">✛</button>
       <button type="button" class="symbol-choice" data-symbol="✦">✦</button>
     </div>
-    <div class="hint">Shown on every anchored double crochet (overlay/spike) stitch in a PDF-imported chart, in place of the "X" marker.</div>
+    <div class="hint">Shown in the cell above every X marker when reversible mode is on. The X itself always stays visible.</div>
   </div>
 
   <div class="form-group">
@@ -315,7 +315,7 @@
       <input type="checkbox" id="f-reversible">
       <span>Reversible technique (Color A is Color B on the other side)</span>
     </label>
-    <div class="hint">When on, the ADC symbol is placed in the cell <strong>above</strong> each "X" cell (never on the X cell itself, since its own color still needs to read clearly). When off, no anchor symbol is shown at all — just the plain colors/stitch types as extracted from the PDF.</div>
+    <div class="hint">When on, the ADC symbol appears in the cell <strong>above</strong> every X marker — in addition to the X, not instead of it. The X always stays. When off, no anchor symbols are shown.</div>
   </div>
 
   <div class="form-group">
@@ -337,12 +337,7 @@
         <span id="pdf-import-label">Tap to import a Stitch Fiddle PDF chart</span>
       </div>
       <input type="file" id="chart-pdf-file" accept="application/pdf">
-      <div class="hint">The PDF importer automatically detects the chart's row/stitch dimensions from the Stitch Fiddle grid; your manual row/stitch values are overwritten by the imported chart.</div>
-      <button type="button" id="pdf-debug-toggle" style="display:none; margin-top:8px; background:none; border:1px solid var(--border, #444); color:var(--muted, #999); border-radius:8px; padding:8px 12px; font-size:0.82rem; width:100%;">Show raw extracted text (debug)</button>
-      <div id="pdf-debug-panel" style="display:none; margin-top:8px;">
-        <div id="pdf-debug-stats" style="font-size:0.78rem; color:var(--muted, #999); margin-bottom:6px;"></div>
-        <textarea id="pdf-debug-text" readonly style="width:100%; min-height:160px; font-family:monospace; font-size:10px; background:var(--card, #1a1a1a); color:inherit; border:1px solid var(--border, #444); border-radius:8px; padding:8px; white-space:pre-wrap;"></textarea>
-      </div>
+      <div class="hint">The PDF importer automatically detects the chart dimensions from the Stitch Fiddle grid. For this pattern it should detect 202 rows × 186 stitches; your manual row/stitch values are overwritten by the imported chart.</div>
     </div>
   </div>
 
@@ -404,7 +399,7 @@
       <div class="legend-row"><span class="legend-swatch legend-b"></span> Color B (%)</div>
       <div class="legend-row"><span class="legend-sym"></span> Single crochet (blank cell)</div>
       <div class="legend-row"><span class="legend-sym">✕</span> Double crochet / overlay stitch (! in chart)</div>
-      <div class="legend-row"><span class="legend-sym" id="legend-anchor-sym">⚓</span> Reversible anchor — cell above each ✕, shown when reversible mode is on</div>
+      <div class="legend-row"><span class="legend-sym" id="legend-anchor-sym">⚓</span> ADC anchor — appears in the cell above each X (in addition to the X) when reversible is on</div>
       <div class="legend-row"><span class="legend-sym">▮</span> Border stitch (" / # in chart)</div>
       <div class="legend-row"><span class="legend-sym">&amp;</span> Chain (foundation row)</div>
       <div class="hint">Overlay mosaic: each row is one color, alternating A/B per your chart — independent of right/wrong side.</div>
@@ -890,13 +885,6 @@ document.getElementById('chart-pdf-file').addEventListener('change', e => {
   startPdfTextImport(file);
   e.target.value = '';
 });
-document.getElementById('pdf-debug-toggle').addEventListener('click', () => {
-  const panel = document.getElementById('pdf-debug-panel');
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  document.getElementById('pdf-debug-toggle').textContent =
-    open ? 'Show raw extracted text (debug)' : 'Hide raw extracted text';
-});
 
 document.getElementById('btn-save-project').addEventListener('click', async () => {
   const name = document.getElementById('f-name').value.trim();
@@ -990,54 +978,47 @@ async function startPdfTextImport(file) {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    // Collect raw text items from all pages, preserving Y position so
-    // pages/columns stay in top-to-bottom order once concatenated.
-    const allItems = []; // { text, y }
+    // Collect every text item from every page as its own candidate line.
+    // We do NOT group by Y coordinate — Stitch Fiddle's chart rows are so
+    // densely packed that a Y-proximity threshold always mis-groups them.
+    // Instead each text item is a candidate line on its own, sorted by
+    // (page, Y-descending) so top-of-page items come first.
+    const allItems = [];
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
       const page = await doc.getPage(pageNo);
       const tc   = await page.getTextContent({ includeMarkedContent: false });
       const vp   = page.getViewport({ scale: 1 });
       for (const item of tc.items) {
-        if (!item.str || !item.transform) continue;
-        const pdfY = item.transform[5];
+        if (!item.str) continue;
+        const pdfY = item.transform ? item.transform[5] : 0;
         const topY = (pageNo - 1) * 100000 + (vp.height - pdfY);
         allItems.push({ text: item.str, y: topY });
       }
     }
     allItems.sort((a, b) => a.y - b.y);
 
-    // IMPORTANT: Stitch Fiddle's PDF text layer does not reliably put each
-    // chart row in its own text item. On-device testing showed a chart row
-    // glued directly onto unrelated adjacent text with zero separator, at
-    // the same Y — e.g. the legend's "& Chain" run straight into the first
-    // pattern row as one string: "& Chain$\" \"$". Any line-based
-    // reconstruction (group items by Y, require the WHOLE resulting line
-    // to match the row pattern) is fragile against this: a merged line
-    // fails the strict full-line match and the real row data inside it is
-    // silently dropped — which is what caused rows to go missing. Instead,
-    // concatenate everything into one blob and scan it for row patterns
-    // wherever they occur; unrelated text glued onto either end can't hide
-    // a row from a pattern scan the way it can from a line-boundary check.
-    const blob = allItems.map(it => it.text).join('');
+    // Some items are themselves merged strings containing multiple chart rows
+    // separated by the Stitch Fiddle border chars (e.g. "& Chain$" "$").
+    // Split each item on the pattern-row boundary chars so that every
+    // chart row becomes its own string before we pass it to the parser.
+    // Pass each raw text item as its own candidate line. Also scan for
+    // embedded pattern rows in merged items (e.g. pdf.js sometimes joins
+    // "& Chain$\" \"$" into one string). The regex finds any complete
+    // $"..."$ or %#...#% row embedded within a longer item.
+    const candidateLines = [];
+    for (const item of allItems) {
+      const t = item.text;
+      candidateLines.push(t);
+      // Extract any additional embedded rows from merged items
+      const embedded = t.match(/[$%][#"!\s][^$%]{0,500}[#"!\s][$%]/g);
+      if (embedded && embedded.length > 1) {
+        for (const e of embedded) candidateLines.push(e);
+      }
+    }
 
-    // Always expose what pdf.js actually extracted — the previous two fix
-    // attempts were both built against a text reconstruction from a
-    // document-viewing tool, not from pdf.js running on-device, and a
-    // custom chart font like Stitch Fiddle's can map its symbols to
-    // different Unicode characters depending on which tool decodes it.
-    // Guessing a third time without seeing the real output isn't a good
-    // use of your time, so surface it directly instead.
-    window._lastPdfDebugBlob = blob;
-    const charCount = ch => (blob.match(new RegExp('\\' + ch, 'g')) || []).length;
-    document.getElementById('pdf-debug-stats').textContent =
-      `${blob.length} chars extracted · $:${charCount('$')} %:${charCount('%')} ":${charCount('"')} #:${charCount('#')} !:${charCount('!')}`;
-    document.getElementById('pdf-debug-text').value = blob;
-    document.getElementById('pdf-debug-toggle').style.display = 'block';
-
-    const result = parseStitchFiddleBlob(blob);
-
+    const result = parseStitchFiddleLines(candidateLines);
     if (!result || result.rows < 5 || result.cols < 5) {
-      label.textContent = 'No chart rows recognized — tap "Show raw extracted text" below and send it back so the symbol mapping can be corrected.';
+      label.textContent = 'No Stitch Fiddle chart found — check that this is a colorwork PDF exported from Stitch Fiddle.';
       area.className = '';
       toast('No chart rows found in PDF');
       return;
@@ -1059,54 +1040,75 @@ async function startPdfTextImport(file) {
   }
 }
 
-// Scan a raw (possibly merged/glued) text blob for Stitch Fiddle row
-// patterns wherever they occur, ignoring anything before/after/between
-// them. A row looks like  $"<content>"$  (Color A) or  %#<content>#%
-// (Color B), where <content> is made only of spaces (SC) and ! (DC).
-// Unlike line-based parsing, this can't be defeated by unrelated text
-// glued onto either end of a row with no separator.
-function parseStitchFiddleBlob(text) {
-  const ROW_RE = /\$"([ !]*)"\$|%#([ !]*)#%/g;
-  const patternRows = []; // collected top-first; reversed at the end
-  let m;
-  while ((m = ROW_RE.exec(text)) !== null) {
-    const isColorA = m[1] !== undefined;
-    const content = isColorA ? m[1] : m[2];
-    const stitches = [];
-    for (const ch of content) {
-      if (ch === '!') stitches.push(isColorA ? 1 : 3);       // DC (X)
-      else if (ch === ' ') stitches.push(isColorA ? 0 : 2);  // SC
+// Pure text parser — takes an array of raw text items from pdf.js
+// (in top-to-bottom page order) and returns { rows, cols, cells } or null.
+//
+// Key insight: pdf.js sometimes concatenates what should be separate lines
+// into one text item (e.g. "& Chain$\" \"$"). We handle this by scanning
+// every item for ALL embedded pattern rows using a greedy regex, rather than
+// treating each item as exactly one line.
+//
+// Pattern row regex: [$%] followed by any border char, then inner content
+// (spaces and ! only), then border char and [$%].
+// This matches both $"..."$ (Color A) and %#...#% (Color B) rows.
+function parseStitchFiddleLines(lines) {
+  const patternRows = []; // collected top-first; will be reversed at end
+
+  // Regex that matches a complete pattern row embedded anywhere in a string.
+  // Group 1: the full matched row string.
+  const rowRe = /[$%][#"][\s!]*[#"][$%]/g;
+
+  for (const raw of lines) {
+    if (!raw || !raw.trim()) continue;
+
+    // Find all pattern rows embedded in this text item.
+    // This handles both clean lines ("$\" \"$") and merged ones
+    // ("& Chain$\" \"$" or two rows joined by pdf.js).
+    const matches = [...raw.matchAll(rowRe)].map(m => m[0]);
+
+    // If we found embedded rows, use those — otherwise treat the
+    // whole trimmed item as a single candidate.
+    const candidates = matches.length > 0 ? matches : [raw.trim()];
+
+    for (const line of candidates) {
+      if (!line || line.length < 4) continue;
+
+      const startCh = line[0];
+      const endCh   = line[line.length - 1];
+
+      // Must start and end with a color marker
+      if ((startCh !== '$' && startCh !== '%') ||
+          (endCh   !== '$' && endCh   !== '%')) continue;
+
+      // Skip foundation chain rows (all & between color markers)
+      if (/^[$%][&]+[$%]$/.test(line)) continue;
+
+      const isColorA = (startCh === '$');
+
+      // Inner content: strip first 2 chars (color + border) and last 2 (border + color)
+      const inner = line.length >= 4 ? line.slice(2, -2) : '';
+
+      const stitches = [];
+      for (const ch of inner) {
+        if (ch === '!') {
+          stitches.push(isColorA ? 1 : 3); // DC stitch
+        } else if (ch === ' ') {
+          stitches.push(isColorA ? 0 : 2); // SC stitch
+        }
+        // skip any other chars (border fragments, etc.)
+      }
+
+      // Accept the row — even all-SC rows (Color A return rows) are real rows
+      patternRows.push({ isColorA, stitches });
     }
-    patternRows.push({ isColorA, stitches });
   }
 
   if (patternRows.length === 0) return null;
 
-  // Stitch Fiddle's PDF text layer never encodes individual stitch glyphs
-  // for a plain Color-A row (a plain row never carries a dc pop) — it
-  // always collapses to a near-empty placeholder regardless of the row's
-  // true width. Recover the real width from the nearest real (non-
-  // placeholder) neighboring row, which is always the content row it's
-  // paired with, instead of trusting the collapsed placeholder.
-  for (let i = 0; i < patternRows.length; i++) {
-    const row = patternRows[i];
-    const isPlaceholder = row.isColorA && row.stitches.length <= 1;
-    if (!isPlaceholder) continue;
-    const next = patternRows[i + 1];
-    const prev = patternRows[i - 1];
-    const nextOk = next && !(next.isColorA && next.stitches.length <= 1);
-    const prevOk = prev && !(prev.isColorA && prev.stitches.length <= 1);
-    const neighbor = nextOk ? next : (prevOk ? prev : null);
-    const width = neighbor ? neighbor.stitches.length : row.stitches.length;
-    row.stitches = new Array(width).fill(0); // all single crochet, Color A
-  }
-
-  // The PDF lists rows top-to-bottom, meaning highest Stitch Fiddle row
-  // number first. The renderer expects cells[0] = row 1 (lowest, worked
-  // first), so reverse.
+  // PDF is top-to-bottom = highest row first. Reverse so index 0 = row 1.
   patternRows.reverse();
 
-  const cols = Math.max(...patternRows.map(r => r.stitches.length));
+  const cols = Math.max(...patternRows.map(r => r.stitches.length), 1);
   const cells = patternRows.map(({ isColorA, stitches }) => {
     const padCode = isColorA ? 0 : 2;
     const padded  = stitches.slice();
@@ -1135,7 +1137,7 @@ function renderTracker() {
     ? 'Overlay mosaic · From imported chart'
     : 'Overlay mosaic · Color alternates every row';
   document.getElementById('mosaic-note-text').textContent = isGrid
-    ? `Overlay mosaic: each row is a single color (Color A or B), independent of right/wrong side. Colors and stitch types come straight from your imported chart. ${p.reversible ? `${p.adcSymbol || '⚓'} appears in the cell above each double crochet overlay stitch (reversible technique).` : `Shown exactly as in the PDF — no anchor markers overlaid.`}`
+    ? `Overlay mosaic: each row is a single color (Color A or B), independent of right/wrong side. Colors and stitch types come straight from your imported chart. ${p.reversible ? `${p.adcSymbol || '⚓'} appears in the cell above each X marker (in addition to the X) — marks where to work the anchored DC on the reverse side.` : `Shown exactly as in the PDF — no anchor markers overlaid.`}`
     : 'Overlay mosaic: each row is worked in one color, alternating Color A and Color B.';
 
   // color band
