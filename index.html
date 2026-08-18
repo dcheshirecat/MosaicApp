@@ -974,14 +974,19 @@ async function startPdfTextImport(file) {
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
     const pages = [];
     const pageItemsList = [];
+    const pageWidths = [];
     for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
       const page = await doc.getPage(pageNo);
       const tc = await page.getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false });
       pages.push(page);
       pageItemsList.push(tc.items || []);
+      // Use the page's actual width (not an assumed page size) so the
+      // left/right frame-marker detection scales correctly to whatever
+      // paper size or orientation this particular PDF was exported at.
+      pageWidths.push(page.view ? (page.view[2] - page.view[0]) : page.getViewport({ scale: 1 }).width);
     }
 
-    const layout = locateStitchFiddleLayout(pageItemsList);
+    const layout = locateStitchFiddleLayout(pageItemsList, pageWidths);
     if (!layout) {
       label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart grid found`;
       area.className = '';
@@ -1018,7 +1023,7 @@ async function startPdfTextImport(file) {
 // emitted as many separate text items. We therefore use their real PDF
 // coordinates instead of joining lines. This is deliberately independent
 // of page number and of PDF.js text-item ordering.
-function locateStitchFiddleLayout(pageItemsList) {
+function locateStitchFiddleLayout(pageItemsList, pageWidths) {
   const pageCandidates = [];
 
   for (let pageIndex = 0; pageIndex < pageItemsList.length; pageIndex++) {
@@ -1029,17 +1034,23 @@ function locateStitchFiddleLayout(pageItemsList) {
       str: String(it.str || '')
     })).filter(it => it.str.length);
 
+    // Fall back to a typical page width only if the real one is somehow
+    // unavailable — the actual width is used whenever we have it, so this
+    // works correctly regardless of paper size or orientation.
+    const pageWidth = (pageWidths && Number.isFinite(pageWidths[pageIndex]) && pageWidths[pageIndex] > 0)
+      ? pageWidths[pageIndex] : 600;
+
     // Left Stitch Fiddle frame: color marker ($/%) + one border/chain glyph.
     // The important detail is PREFIX matching: an X can be fused onto it.
     const leftMarkers = items.filter(it =>
-      it.x < 0.35 * 600 && /^(?:[$%]["#&])/.test(it.str)
+      it.x < 0.35 * pageWidth && /^(?:[$%]["#&])/.test(it.str)
     );
     if (leftMarkers.length < 10) continue;
 
     // Right frame normally ends in "#$", "#%", '"$', or '&$'. It can also
     // have DC glyphs immediately before it, so suffix matching is intentional.
     const rightMarkers = items.filter(it =>
-      it.x > 0.45 * 600 && /["#&][$%]$/.test(it.str)
+      it.x > 0.45 * pageWidth && /["#&][$%]$/.test(it.str)
     );
 
     // Group left markers by their actual baseline. This yields one record
@@ -1143,13 +1154,15 @@ function locateStitchFiddleLayout(pageItemsList) {
 
   const sourceRows = best.rows.slice().sort((a,b) => a.sourceRow - b.sourceRow);
 
-  // We expect this PDF to contain a complete 0..N source row sequence. Do
-  // not silently pad or invent rows: if a row number is missing, report the
-  // import as incomplete.
+  // We expect this PDF to contain a complete, contiguous row-number
+  // sequence — but the starting number varies: some Stitch Fiddle exports
+  // number rows from 0, others from 1 (the usual crochet convention). Do
+  // not silently pad or invent rows: if a row number is missing from the
+  // middle of the sequence, report the import as incomplete.
   const minRow = sourceRows.length ? sourceRows[0].sourceRow : null;
   const maxRow = sourceRows.length ? sourceRows[sourceRows.length - 1].sourceRow : null;
-  const expectedCount = (minRow === 0 && maxRow != null) ? maxRow + 1 : sourceRows.length;
-  const complete = minRow === 0 && sourceRows.length === expectedCount;
+  const expectedCount = (minRow != null && maxRow != null) ? (maxRow - minRow + 1) : sourceRows.length;
+  const complete = minRow != null && sourceRows.length === expectedCount;
   if (!complete) {
     console.warn('Stitch Fiddle import: incomplete source row sequence', {
       found: sourceRows.map(r => r.sourceRow), minRow, maxRow, expectedCount
