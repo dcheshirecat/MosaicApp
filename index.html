@@ -337,7 +337,12 @@
         <span id="pdf-import-label">Tap to import a Stitch Fiddle PDF chart</span>
       </div>
       <input type="file" id="chart-pdf-file" accept="application/pdf">
-      <div class="hint">The PDF importer automatically detects the chart dimensions from the Stitch Fiddle grid. For this pattern it should detect 202 rows × 186 stitches; your manual row/stitch values are overwritten by the imported chart.</div>
+      <div class="hint">The PDF importer automatically detects the chart's row/stitch dimensions from the Stitch Fiddle grid; your manual row/stitch values are overwritten by the imported chart.</div>
+      <button type="button" id="pdf-debug-toggle" style="display:none; margin-top:8px; background:none; border:1px solid var(--border, #444); color:var(--muted, #999); border-radius:8px; padding:8px 12px; font-size:0.82rem; width:100%;">Show raw extracted text (debug)</button>
+      <div id="pdf-debug-panel" style="display:none; margin-top:8px;">
+        <div id="pdf-debug-stats" style="font-size:0.78rem; color:var(--muted, #999); margin-bottom:6px;"></div>
+        <textarea id="pdf-debug-text" readonly style="width:100%; min-height:160px; font-family:monospace; font-size:10px; background:var(--card, #1a1a1a); color:inherit; border:1px solid var(--border, #444); border-radius:8px; padding:8px; white-space:pre-wrap;"></textarea>
+      </div>
     </div>
   </div>
 
@@ -885,6 +890,13 @@ document.getElementById('chart-pdf-file').addEventListener('change', e => {
   startPdfTextImport(file);
   e.target.value = '';
 });
+document.getElementById('pdf-debug-toggle').addEventListener('click', () => {
+  const panel = document.getElementById('pdf-debug-panel');
+  const open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  document.getElementById('pdf-debug-toggle').textContent =
+    open ? 'Show raw extracted text (debug)' : 'Hide raw extracted text';
+});
 
 document.getElementById('btn-save-project').addEventListener('click', async () => {
   const name = document.getElementById('f-name').value.trim();
@@ -1007,10 +1019,25 @@ async function startPdfTextImport(file) {
     // wherever they occur; unrelated text glued onto either end can't hide
     // a row from a pattern scan the way it can from a line-boundary check.
     const blob = allItems.map(it => it.text).join('');
+
+    // Always expose what pdf.js actually extracted — the previous two fix
+    // attempts were both built against a text reconstruction from a
+    // document-viewing tool, not from pdf.js running on-device, and a
+    // custom chart font like Stitch Fiddle's can map its symbols to
+    // different Unicode characters depending on which tool decodes it.
+    // Guessing a third time without seeing the real output isn't a good
+    // use of your time, so surface it directly instead.
+    window._lastPdfDebugBlob = blob;
+    const charCount = ch => (blob.match(new RegExp('\\' + ch, 'g')) || []).length;
+    document.getElementById('pdf-debug-stats').textContent =
+      `${blob.length} chars extracted · $:${charCount('$')} %:${charCount('%')} ":${charCount('"')} #:${charCount('#')} !:${charCount('!')}`;
+    document.getElementById('pdf-debug-text').value = blob;
+    document.getElementById('pdf-debug-toggle').style.display = 'block';
+
     const result = parseStitchFiddleBlob(blob);
 
     if (!result || result.rows < 5 || result.cols < 5) {
-      label.textContent = 'No Stitch Fiddle chart found — check that this is a colorwork PDF exported from Stitch Fiddle.';
+      label.textContent = 'No chart rows recognized — tap "Show raw extracted text" below and send it back so the symbol mapping can be corrected.';
       area.className = '';
       toast('No chart rows found in PDF');
       return;
