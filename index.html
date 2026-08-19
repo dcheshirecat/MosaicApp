@@ -129,6 +129,7 @@
   #chart-tools button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; }
   #btn-fix-chart.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   #btn-window-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #btn-pattern-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   #chart-legend-pop { display: none; margin: 0 12px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   #chart-legend-pop.open { display: block; }
@@ -391,6 +392,7 @@
         <button id="btn-legend" title="Symbol legend">?</button>
         <button id="btn-fix-chart" title="Fix mismarked cells">✎</button>
         <button id="btn-stitch-marker" title="Drop stitch marker">📍</button>
+        <button id="btn-pattern-view" title="Toggle pattern / stripes view">🖼</button>
       </div>
     </div>
     <div id="chart-legend-pop">
@@ -508,6 +510,7 @@ let pendingImageData = null; // base64 for new chart-image upload
 let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
+let patternView = false; // false = raw color-band stripes, true = visual pattern (fills alternating blank rows from their neighbor so DC placements read as a picture)
 let gridCellSize = 10; // px, adjustable via zoom buttons
 let settings = { windowedView: false, windowSize: 10, accentColor: '#e94560' }; // app-wide viewing preferences
 const STITCH_WINDOW = 10; // default "N stitches at a time" view width, in columns
@@ -1217,8 +1220,9 @@ function renderTracker() {
   document.getElementById('ctr-stitch').textContent = p.currentStitch;
   document.getElementById('ctr-stitch-of').textContent = `of ${p.stitches}`;
 
-  // fix mode only makes sense on grid charts
+  // fix mode and pattern-view toggle only make sense on grid charts
   document.getElementById('btn-fix-chart').style.display = isGrid ? '' : 'none';
+  document.getElementById('btn-pattern-view').style.display = isGrid ? '' : 'none';
   document.getElementById('fix-chart-hint').classList.toggle('show', isGrid && fixChartMode);
 
   if (isGrid) {
@@ -1261,6 +1265,37 @@ function renderChartGrid(p) {
   const g = p.chartGrid;
   const canvas = document.getElementById('chart-grid-canvas');
   const wrap = document.getElementById('chart-grid-wrap');
+
+  // In overlay mosaic crochet, every other row is worked entirely plain
+  // (no popped/DC stitches at all) — that's not a parsing artifact, it's
+  // how the technique works: the raised stitch in the DC row visually
+  // covers the plain row worked right before it. Rendering every row
+  // literally therefore shows the true chart data, but reads as thin
+  // stripes rather than a picture. Pattern view instead shows each plain
+  // row using its DC-carrying neighbor's cells, so raised stitches read as
+  // a solid picture the way they do on the finished fabric — purely a
+  // display choice, the underlying per-row data used for tracking and
+  // counting is untouched.
+  function buildPatternDisplayCells() {
+    if (g._patternCells) return g._patternCells;
+    const hasDc = new Array(g.rows);
+    for (let r = 0; r < g.rows; r++) {
+      hasDc[r] = g.cells[r].some(code => code === 1 || code === 3);
+    }
+    const display = new Array(g.rows);
+    for (let r = 0; r < g.rows; r++) {
+      if (hasDc[r]) { display[r] = g.cells[r]; continue; }
+      let donor = null;
+      for (let d = 1; d < g.rows && !donor; d++) {
+        if (r + d < g.rows && hasDc[r + d]) donor = g.cells[r + d];
+        else if (r - d >= 0 && hasDc[r - d]) donor = g.cells[r - d];
+      }
+      display[r] = donor || g.cells[r];
+    }
+    g._patternCells = display;
+    return display;
+  }
+  const displayCells = patternView ? buildPatternDisplayCells() : g.cells;
 
   const curRowIndexFromTop = g.rows - p.currentRow;
   let curColIndex = g.cols - p.currentStitch; // stitch 1 = rightmost column
@@ -1305,7 +1340,7 @@ function renderChartGrid(p) {
   for (let r = 0; r < g.rows; r++) {
     const y = r * cs;
     for (let c = colStart; c < colEnd; c++) {
-      const code = g.cells[r][c];
+      const code = displayCells[r][c];
       const isB = code === 2 || code === 3;
       ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
       const x = (c - colStart) * cs;
@@ -1349,7 +1384,7 @@ function renderChartGrid(p) {
   const xPad = Math.max(1.5, cs * 0.22);
   for (let r = 0; r < g.rows; r++) {
     for (let c = colStart; c < colEnd; c++) {
-      const code = g.cells[r][c];
+      const code = displayCells[r][c];
       if (code !== 1 && code !== 3) continue;
       const isB = code === 2 || code === 3;
       const x0 = (c - colStart) * cs, y0 = r * cs;
@@ -1433,6 +1468,7 @@ function renderChartGrid(p) {
     const r = Math.floor(y / cs);
     if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return;
     g.cells[r][c] = (g.cells[r][c] + 1) % 4;
+    g._patternCells = null; // invalidate pattern-view cache — donor rows changed
     saveAll();
     renderChartGrid(p);
   } : null;
@@ -1645,6 +1681,11 @@ document.getElementById('btn-fix-chart').addEventListener('click', () => {
   fixChartMode = !fixChartMode;
   document.getElementById('btn-fix-chart').classList.toggle('active', fixChartMode);
   document.getElementById('fix-chart-hint').classList.toggle('show', fixChartMode);
+  const p = getProject(activeId); if (p) renderChartGrid(p);
+});
+document.getElementById('btn-pattern-view').addEventListener('click', () => {
+  patternView = !patternView;
+  document.getElementById('btn-pattern-view').classList.toggle('active', patternView);
   const p = getProject(activeId); if (p) renderChartGrid(p);
 });
 
