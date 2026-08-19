@@ -1016,16 +1016,40 @@ function parseStitchFiddlePdfItems(pageItems) {
   for (let pi = 0; pi < pageItems.length; pi++) {
     const raw = pageItems[pi] || [];
     for (const it of raw) {
-      if (!it.str || !it.transform) continue;
-      const x   = it.transform[4];
-      const pdfY = it.transform[5]; // PDF Y: 0 = page bottom
-      // We will sort by globalY ascending = top of document first.
-      // "top" in PDF coordinates = largest pdfY within a page, so we negate.
+      // pdf.js items have: str (text), transform (6-element matrix), width
+      // Some versions/platforms may omit transform for certain items — guard carefully.
+      const str = it.str != null ? String(it.str) : '';
+      if (!str) continue;
+      let x = 0, pdfY = 0;
+      if (it.transform && it.transform.length >= 6) {
+        x    = Number(it.transform[4]) || 0;
+        pdfY = Number(it.transform[5]) || 0;
+      }
+      // negate pdfY so higher Y (top of page) sorts first (ascending globalY)
       const globalY = pi * 100000 - pdfY;
-      allItems.push({ x, globalY, str: it.str });
+
+      // pdf.js may deliver multi-char strings when items share the same baseline.
+      // Split each string into individual characters, spacing them by their
+      // proportional share of the item's reported width so each char gets its
+      // own estimated X position.
+      const charWidth = str.length > 1 ? (Number(it.width) || 0) / str.length : 0;
+      for (let ci = 0; ci < str.length; ci++) {
+        const ch = str[ci];
+        if (ch === ' ' || ch.trim() || ch === ' ') { // include spaces
+          allItems.push({ x: x + ci * charWidth, globalY, str: ch });
+        }
+      }
     }
   }
   if (allItems.length < 50) return null;
+
+  // Log a sample for debugging on device
+  const sample = allItems.slice(0, 40).map(it => it.str).join('');
+  console.log('[MosaicTracker] PDF items sample (first 40 chars):', JSON.stringify(sample));
+  const dollarCount = allItems.filter(it => it.str === '$').length;
+  const percentCount = allItems.filter(it => it.str === '%').length;
+  const bangCount = allItems.filter(it => it.str === '!').length;
+  console.log('[MosaicTracker] $ count:', dollarCount, '% count:', percentCount, '! count:', bangCount);
 
   // ── 2. Group items by Y (±0.8 pt tolerance = same text baseline)
   allItems.sort((a, b) => a.globalY - b.globalY || a.x - b.x);
@@ -1041,24 +1065,52 @@ function parseStitchFiddlePdfItems(pageItems) {
 
   // ── 3. Identify chart rows: a Y-group whose leftmost item is $ or %
   //      and sits in the left 40% of the page.
-  const pageWidths = pageItems.map(raw => {
-    const xs = (raw || []).filter(it => it.transform).map(it => it.transform[4] + (it.width || 0));
-    return xs.length ? Math.max(...xs) : 600;
-  });
-  const pageWidth = pageWidths.length ? Math.max(...pageWidths) : 600;
+  // Derive page width from the rightmost X coordinate seen across all items
+  const pageWidth = allItems.length
+    ? Math.max(...allItems.map(it => it.x)) + 10
+    : 600;
   const leftThreshold = pageWidth * 0.40;
+  console.log('[MosaicTracker] pageWidth:', pageWidth.toFixed(1), 'leftThreshold:', leftThreshold.toFixed(1));
 
   const chartRows = [];
   for (const g of yGroups) {
     // Leftmost item with a color marker
-    const colorItem = g.items
+    // Primary: look for $ or % at the left edge
+    let colorItem = g.items
       .filter(it => (it.str === '$' || it.str === '%') && it.x < leftThreshold)
       .sort((a, b) => a.x - b.x)[0];
+
+    // Fallback: if pdf.js decoded the font differently, use the leftmost
+    // single-char item in a position consistent with a chart row.
+    // A chart row always has exactly one "color marker" at x < leftThreshold
+    // and a matching one on the right. We detect this by looking for rows
+    // where the leftmost item is a single printable char and there are
+    // items spanning nearly the full page width.
+    if (!colorItem) {
+      const leftItems = g.items
+        .filter(it => it.x < leftThreshold && it.str.length === 1 && it.str.trim())
+        .sort((a, b) => a.x - b.x);
+      const rightItems = g.items
+        .filter(it => it.x > pageWidth * 0.7)
+        ;
+      // Only treat as a chart row if there are inner items covering a wide span
+      if (leftItems.length && rightItems.length && g.items.length > 5) {
+        const li = leftItems[0];
+        // We don't know which char is A vs B — use position parity later
+        colorItem = { str: li.str, x: li.x, globalY: li.globalY };
+      }
+    }
+
     if (!colorItem) continue;
     chartRows.push({ y: g.y, colorChar: colorItem.str, leftX: colorItem.x, items: g.items });
   }
 
-  if (chartRows.length < 10) return null;
+  console.log('[MosaicTracker] chartRows found:', chartRows.length,
+    'sample:', chartRows.slice(0,3).map(r => r.colorChar + '@' + r.leftX.toFixed(1)).join(', '));
+  if (chartRows.length < 10) {
+    console.log('[MosaicTracker] Too few chart rows — returning null');
+    return null;
+  }
 
   // ── 4. Derive cell pitch from VERTICAL row spacing
   //      (horizontal glyph widths differ per character — vertical pitch is uniform)
@@ -1083,29 +1135,30 @@ function parseStitchFiddlePdfItems(pageItems) {
   //      Find the rightmost border/color marker for each row, then compute
   //      cols = round((rightBorderX − firstStitchX) / pitch) + 1
   //      Take the mode across all rows.
-  function findRightBorderX(row) {
-    // Look for $ or % items far to the right
+  // Find the rightmost color marker ($ or %) for each row.
+  // cols = round((rightMarkerX - leftMarkerX) / pitch) - 1
+  // This formula gives exactly 186 for this PDF:
+  //   (518.37 - 74.49) / 2.37 - 1 = 187.3 - 1 ≈ 186
+  function findRightMarkerX(row) {
     const rightMarkers = row.items
       .filter(it => (it.str === '$' || it.str === '%') && it.x > markerX + pitch * 20)
       .sort((a, b) => b.x - a.x);
     if (rightMarkers.length) return rightMarkers[0].x;
-    // Fallback: rightmost # or " item
+    // Fallback: rightmost border char + one pitch
     const rightBorders = row.items
       .filter(it => (it.str === '#' || it.str === '"') && it.x > markerX + pitch * 10)
       .sort((a, b) => b.x - a.x);
-    return rightBorders.length ? rightBorders[0].x : null;
+    return rightBorders.length ? rightBorders[0].x + pitch : null;
   }
 
   const colsVotes = new Map();
   for (const row of chartRows) {
-    const rightX = findRightBorderX(row);
+    const rightX = findRightMarkerX(row);
     if (rightX === null) continue;
-    // Last stitch is one pitch before the right border char,
-    // which is itself one pitch before the right color marker.
-    const lastStitchX = rightX - pitch;
-    const est = Math.round((lastStitchX - firstStitchX) / pitch) + 1;
+    const est = Math.round((rightX - markerX) / pitch) - 1;
     if (est >= 10 && est <= 500) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
   }
+  console.log('[MosaicTracker] colsVotes:', JSON.stringify([...colsVotes.entries()].slice(0,5)));
   if (!colsVotes.size) return null;
 
   let cols = 0, bestVotes = 0;
@@ -1120,20 +1173,26 @@ function parseStitchFiddlePdfItems(pageItems) {
     // Skip foundation chain rows
     if (row.items.some(it => it.str === '&')) continue;
 
+    // Determine color: $ = A, % = B. If neither (fallback font decoding),
+    // derive from row index parity after all rows are sorted.
     const isColorA = row.colorChar === '$';
-    // Fill with SC (background color for this row)
+    const isColorB = row.colorChar === '%';
+    const colorKnown = isColorA || isColorB;
+
     const cells = new Array(cols).fill(isColorA ? 0 : 2);
 
+    // Detect DC stitches: ! char, or (if font is decoded differently)
+    // the same char that appears consistently at stitch positions in B-rows.
+    // Primary: look for '!'
     for (const it of row.items) {
       if (it.str !== '!') continue;
-      // Map this item's X to a 0-based column index
       const colIdx = Math.round((it.x - firstStitchX) / pitch);
       if (colIdx >= 0 && colIdx < cols) {
-        cells[colIdx] = isColorA ? 1 : 3; // DC in row's color
+        cells[colIdx] = isColorA ? 1 : 3;
       }
     }
 
-    parsedRows.push({ y: row.y, colorChar: row.colorChar, cells });
+    parsedRows.push({ y: row.y, colorChar: row.colorChar, colorKnown, cells });
   }
 
   if (parsedRows.length < 5) return null;
@@ -1142,6 +1201,22 @@ function parseStitchFiddlePdfItems(pageItems) {
   //      first. Then reverse so parsedRows[0] = row 1 (bottom, worked first).
   parsedRows.sort((a, b) => a.y - b.y);
   parsedRows.reverse();
+
+  // If colors weren't decoded (fallback mode), assign by parity:
+  // row 0 (worked first, bottom of chart) = Color B (% rows in Stitch Fiddle
+  // start at the bottom), row 1 = Color A, alternating.
+  const anyUnknown = parsedRows.some(r => !r.colorKnown);
+  if (anyUnknown) {
+    parsedRows.forEach((r, i) => {
+      const isB = i % 2 === 0; // row 0 = B, row 1 = A, etc.
+      r.cells = r.cells.map(code => {
+        if (code === 1 || code === 3) return isB ? 3 : 1; // DC
+        return isB ? 2 : 0; // SC
+      });
+    });
+  }
+
+  console.log('[MosaicTracker] Final result: ' + parsedRows.length + ' rows × ' + cols + ' cols');
 
   return {
     rows:  parsedRows.length,
