@@ -1226,7 +1226,8 @@ async function parseStitchFiddlePdfPages(pages) {
 
   // reference swatch colors, so cell classification works for any two
   // colors the pattern actually uses (not just black/white)
-  const scale = 4;
+  const scale = 6; // cells are only ~2.4pt — render at higher resolution so
+                    // a centered sample patch comfortably avoids gridlines
   const cache = new Map();
   if (colorPage) {
     const glyphs = [];
@@ -1249,10 +1250,17 @@ async function parseStitchFiddlePdfPages(pages) {
       if (b) { const [vx, vy] = render.viewport.convertToViewportPoint(b.x, b.y); refB = samplePatch(vx, vy - 1, 2, render.imageData); }
     }
   }
+  function colorDist2(a, b) { return (a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2; }
+  // Discard the sampled reference swatches if they aren't clearly distinct
+  // colors — a bad sample (e.g. landing partly on the icon's ink instead of
+  // pure swatch fill) would otherwise silently bias every cell toward one
+  // color, which is exactly what turns most of a chart blank.
+  if (refA && refB && colorDist2(refA, refB) < 2500) { refA = null; refB = null; }
+
   function classifyIsB(rgb) {
     if (refA && refB) {
-      const dA = (rgb[0]-refA[0])**2 + (rgb[1]-refA[1])**2 + (rgb[2]-refA[2])**2;
-      const dB = (rgb[0]-refB[0])**2 + (rgb[1]-refB[1])**2 + (rgb[2]-refB[2])**2;
+      const dA = colorDist2(rgb, refA);
+      const dB = colorDist2(rgb, refB);
       return dB < dA;
     }
     const lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
@@ -1265,10 +1273,13 @@ async function parseStitchFiddlePdfPages(pages) {
 
   const cells = [];
   for (const rn of orderedRowNums) {
-    const yPdf = best.rowYByNum.get(rn);
+    // rowY / column x from tag glyphs mark a cell's drawing origin, not its
+    // center — nudge half a cell-pitch in both axes so the sample lands in
+    // the middle of the actual fill rather than right on a grid line.
+    const yPdf = best.rowYByNum.get(rn) + best.pitch / 2;
     const rowArr = new Array(best.cols);
     for (let col = best.STITCH_MIN; col <= best.STITCH_MAX; col++) {
-      const xPdf = best.originX + col * best.pitch;
+      const xPdf = best.originX + col * best.pitch + best.pitch / 2;
       const [vx, vy] = gridRender.viewport.convertToViewportPoint(xPdf, yPdf);
       const rgb = samplePatch(vx, vy, patchR, gridRender.imageData);
       const isB = classifyIsB(rgb);
