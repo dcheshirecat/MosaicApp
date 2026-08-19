@@ -1038,55 +1038,9 @@ function parseStitchFiddlePdfItems(pageItems) {
 
     if (chartGroups.length < 10) continue;
 
-    // ── 3. leftX — median X of color markers across all chart rows ──────────
+    // ── 3. leftX — median X of color markers, and vertical row pitch ────────
     const leftXArr = chartGroups.map(g => g.colorItem.x).sort((a, b) => a - b);
     const leftX    = leftXArr[Math.floor(leftXArr.length / 2)];
-
-    // ── 4. Character pitch ─────────────────────────────────────────────────
-    // Background/single-crochet cells are usually NOT real space characters
-    // in these PDFs — they're just a horizontal position skip with no glyph
-    // at all — so the gaps between items must be measured in pixels and
-    // converted to cell counts; string concatenation alone loses them.
-    // A single glyph's own reported "width" is its font advance width,
-    // which is NOT reliably the same as the fixed cell spacing the chart is
-    // laid out on ('!' and '$' are simply different-shaped characters, even
-    // positioned on a uniform grid) — that's an unreliable signal no matter
-    // which characters it's measured from.
-    // Primary source instead: the border stitch (" or #) is, by this
-    // format's own definition, always the very first stitch — positioned
-    // immediately after the color marker with zero blank cells between
-    // them. So the gap from the marker to the very next item is guaranteed
-    // to be exactly one true cell width, with no averaging or font-metric
-    // assumptions involved. Secondary: width/length of multi-char runs.
-    // Fallback: vertical row spacing (cells are square).
-    const edgePitches = [];
-    for (const g of chartGroups) {
-      if (g.colorItem.str.length >= 2 && g.colorItem.width > 0) {
-        // Marker + border stitch (and maybe more) combined in one drawn
-        // item — these characters are guaranteed adjacent with no gap.
-        const p = g.colorItem.width / (g.colorItem.str.length - 1 || 1);
-        if (p > 0.3 && p < 20) edgePitches.push(p);
-      } else {
-        const sortedRowItems = g.items.slice().sort((a, b) => a.x - b.x);
-        const idx = sortedRowItems.indexOf(g.colorItem);
-        const next = sortedRowItems[idx + 1];
-        if (next) {
-          const d = next.x - g.colorItem.x;
-          if (d > 0.3 && d < 20) edgePitches.push(d);
-        }
-      }
-    }
-    edgePitches.sort((a, b) => a - b);
-    const edgePitch = edgePitches.length >= 10
-      ? edgePitches[Math.floor(edgePitches.length / 2)] : null;
-
-    const measuredPitches = items
-      .filter(it => it.str.length >= 2 && it.width > 0 && it.x >= leftX - 5)
-      .map(it => it.width / it.str.length)
-      .filter(p => p > 0.3 && p < 20);
-    measuredPitches.sort((a, b) => a - b);
-    const measuredPitch = measuredPitches.length >= 3
-      ? measuredPitches[Math.floor(measuredPitches.length / 2)] : null;
 
     const yArr  = chartGroups.map(g => g.y).sort((a, b) => a - b);
     const yGaps = [];
@@ -1096,57 +1050,76 @@ function parseStitchFiddlePdfItems(pageItems) {
     }
     yGaps.sort((a, b) => a - b);
     const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
+    if (!rowPitch || !Number.isFinite(rowPitch) || rowPitch <= 0) continue;
 
-    const charPitch = edgePitch || measuredPitch || rowPitch;
-    if (!charPitch || !Number.isFinite(charPitch) || charPitch <= 0) continue;
-
-    // ── 5. Column count from right color markers ────────────────────────────
-    // The right $ / % marker sits at physPos = cols + 1 (where physPos 0 is
-    // the left $ / % marker, and physPos 1..cols are the actual stitches).
-    // Therefore cols = physPos of the right marker − 1.
-    const rightPhysPosArr = chartGroups.map(g => {
+    // ── 4. Each row's own right-marker X position ───────────────────────────
+    // Used both to pin down cols and, more importantly, to calibrate each
+    // row's own horizontal pitch individually below.
+    function findRightMarkerX(g) {
       for (let i = g.items.length - 1; i >= 0; i--) {
         const s    = g.items[i].str;
         const last = s[s.length - 1];
-        if ((last === '$' || last === '%') && g.items[i].x > leftX + charPitch * 10) {
-          const itemStartPhysPos = Math.round((g.items[i].x - leftX) / charPitch);
-          return itemStartPhysPos + (s.length - 1); // marker is the last char of this item
+        if ((last === '$' || last === '%') && g.items[i].x > g.colorItem.x + rowPitch * 10) {
+          return g.items[i].x;
         }
       }
       return null;
-    }).filter(x => x !== null).sort((a, b) => a - b);
+    }
 
-    let cols = 186; // safe default for this Stitch Fiddle format
-    if (rightPhysPosArr.length >= 5) {
-      const rightPhysPos = rightPhysPosArr[Math.floor(rightPhysPosArr.length / 2)];
-      const est = rightPhysPos - 1;
-      if (est >= 10 && est <= 400) cols = est;
+    // ── 5. Column count ───────────────────────────────────────────────────
+    // A glyph's own reported pixel width is its font advance width, which is
+    // NOT reliably the same as the fixed cell spacing the chart is laid out
+    // on ('!' and '$' are just different-shaped characters, even on a
+    // uniform grid) — that unreliable signal is what previously produced a
+    // stretched, drifting chart. The vertical spacing between rows doesn't
+    // have that problem at all (it has nothing to do with character glyphs),
+    // and Stitch Fiddle charts use square cells, so it's a much more
+    // trustworthy stand-in for the horizontal cell width. For every row,
+    // cols = round((rightMarkerX − leftMarkerX) / rowPitch) − 1; take
+    // whichever value the most rows agree on.
+    const colsVotes = new Map();
+    for (const g of chartGroups) {
+      const rightX = findRightMarkerX(g);
+      if (rightX === null) continue;
+      const est = Math.round((rightX - g.colorItem.x) / rowPitch) - 1;
+      if (est >= 10 && est <= 400) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
+    }
+    let cols = 186, bestVotes = 0; // 186 only used if voting fails entirely
+    for (const [est, votes] of colsVotes) {
+      if (votes > bestVotes) { bestVotes = votes; cols = est; }
     }
 
     // ── 6. Parse each row into a cells array ──────────────────────────────
-    // Every character is placed by its own pixel position (physPos, relative
-    // to this row's own color marker), not by concatenating strings — that's
-    // what correctly accounts for the un-rendered background-cell gaps.
+    // Each row's marks are placed using THAT row's own pitch, calibrated by
+    // interpolating between its own left and right markers (known to sit at
+    // physPos 0 and physPos cols+1). This is what keeps the picture crisp
+    // instead of drifting/stretching toward the right edge: a single global
+    // pitch, applied the same way to every row, lets any tiny per-row error
+    // compound across up to `cols` columns; per-row calibration can't drift
+    // because it's anchored at both ends of that specific row.
     const candidates = [];
     for (const g of chartGroups) {
       const colorChar  = g.colorItem.str[0]; // '$' or '%'
       const foundation = g.colorItem.str.startsWith('$&') ||
-        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + charPitch * 3);
+        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + rowPitch * 3);
 
       // Row number label: the digit-only item closest to leftX on its left
       const labelItem = g.items
         .filter(it => /^\d+$/.test(it.str.trim()) &&
-          it.x < leftX - charPitch * 0.3 &&
-          it.x > leftX - charPitch * 25)
+          it.x < leftX - rowPitch * 0.3 &&
+          it.x > leftX - rowPitch * 25)
         .sort((a, b) => b.x - a.x)[0];
       const sourceRow = labelItem ? parseInt(labelItem.str.trim(), 10) : null;
+
+      const rightX = findRightMarkerX(g);
+      const localPitch = rightX !== null ? (rightX - g.colorItem.x) / (cols + 1) : rowPitch;
 
       const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
 
       for (const it of g.items) {
         if (!it.str.includes('!')) continue;
-        if (it.x < leftX - charPitch * 1.5 || it.x > leftX + (cols + 3) * charPitch) continue;
-        const startPhysical = Math.round((it.x - g.colorItem.x) / charPitch);
+        if (it.x < leftX - localPitch * 1.5 || it.x > leftX + (cols + 3) * localPitch) continue;
+        const startPhysical = Math.round((it.x - g.colorItem.x) / localPitch);
         for (let i = 0; i < it.str.length; i++) {
           if (it.str[i] !== '!') continue;
           // physPos 0 = $ color marker → col −1 (skipped)
