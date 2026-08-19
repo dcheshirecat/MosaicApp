@@ -510,7 +510,14 @@ let pendingImageData = null; // base64 for new chart-image upload
 let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
-let patternView = false; // false = raw color-band stripes, true = visual pattern (fills alternating blank rows from their neighbor so DC placements read as a picture)
+let patternView = false; // false = raw view (real yarn colors A/B, X = dc marker, fully independent signals); true = pattern/silhouette view (fixed non-yarn palette, so a dc cell is never visually mistaken for "color B")
+
+// Pattern view's fixed 2-tone palette. Deliberately NOT the project's real
+// colorAHex/colorBHex — pattern view shows stitch TYPE (background vs. dc
+// overlay), not yarn color, and reusing the real hex values there previously
+// made a dc cell in a Color-B row look identical to a plain Color-B cell.
+const PATTERN_BG = '#ece4d6'; // background / single-crochet cells
+const PATTERN_FG = '#26232b'; // double-crochet "spike" cells — the motif
 let gridCellSize = 10; // px, adjustable via zoom buttons
 let settings = { windowedView: false, windowSize: 10, accentColor: '#e94560' }; // app-wide viewing preferences
 const STITCH_WINDOW = 10; // default "N stitches at a time" view width, in columns
@@ -1266,40 +1273,21 @@ function renderChartGrid(p) {
   const canvas = document.getElementById('chart-grid-canvas');
   const wrap = document.getElementById('chart-grid-wrap');
 
-  // In overlay mosaic crochet, every other row is worked entirely plain
-  // (no popped/DC stitches at all) — that's how the technique works, not a
-  // parsing artifact. The raised (DC) stitch is what visually covers the
-  // fabric and forms the picture; a plain stitch just shows that row's own
-  // background color. Painting every cell in a row solid in that row's own
-  // color (as raw/stripes view does, correctly, for "which yarn to hold")
-  // therefore reads as noisy stripes rather than a picture — the actual
-  // shape only exists in the DC placements. Pattern view collapses the
-  // chart to a clean two-tone silhouette instead: any DC cell keeps its
-  // real color (that's what pops and shows), and every other cell becomes
-  // flat background color A, regardless of which row's working color it
-  // technically belongs to. The underlying per-row data used for tracking
-  // and counting is completely untouched — this only changes what's drawn.
-  function buildPatternDisplayCells() {
-    if (g._patternCells) return g._patternCells;
-    const hasDc = new Array(g.rows);
-    for (let r = 0; r < g.rows; r++) {
-      hasDc[r] = g.cells[r].some(code => code === 1 || code === 3);
-    }
-    const display = new Array(g.rows);
-    for (let r = 0; r < g.rows; r++) {
-      let source = g.cells[r];
-      if (!hasDc[r]) {
-        for (let d = 1; d < g.rows; d++) {
-          if (r + d < g.rows && hasDc[r + d]) { source = g.cells[r + d]; break; }
-          if (r - d >= 0 && hasDc[r - d]) { source = g.cells[r - d]; break; }
-        }
-      }
-      display[r] = source.map(code => (code === 1 || code === 3) ? code : 0);
-    }
-    g._patternCells = display;
-    return display;
-  }
-  const displayCells = patternView ? buildPatternDisplayCells() : g.cells;
+  // Color (A/B) and stitch-type (dc "X" overlay) are two completely
+  // independent pieces of information per cell — never derive one from the
+  // other, and never let one view's palette make them LOOK like the same
+  // signal. Raw view answers "what yarn do I hold, and is this an X" using
+  // the project's real colorAHex/colorBHex for fill, with the X drawn on
+  // top wholly independently. Pattern view answers a different question —
+  // "what will the picture look like" — and does so with its own fixed,
+  // non-yarn palette (PATTERN_BG/PATTERN_FG) so a dc cell can never be
+  // mistaken for "this is what color B looks like": it is a stitch-type
+  // marker, not a color swatch, regardless of which row it came from. Cell
+  // *data* (g.cells) is identical in both views — only the fill palette
+  // changes; a plain (non-dc) cell always renders as background in both
+  // views rather than borrowing a neighboring row's layout, since a row
+  // with no dc stitches genuinely has no picture content of its own.
+  const displayCells = g.cells;
 
   const curRowIndexFromTop = g.rows - p.currentRow;
   let curColIndex = g.cols - p.currentStitch; // stitch 1 = rightmost column
@@ -1340,13 +1328,19 @@ function renderChartGrid(p) {
     return stitchNum < p.currentStitch;
   }
 
-  // 1) fill every visible cell with its base color, dimming completed ones
+  // 1) fill every visible cell with its base color, dimming completed ones.
+  //    Raw view = real yarn color (A/B), independent of stitch type.
+  //    Pattern view = fixed silhouette palette, independent of which row's
+  //    color a dc cell happened to come from — see note above.
   for (let r = 0; r < g.rows; r++) {
     const y = r * cs;
     for (let c = colStart; c < colEnd; c++) {
       const code = displayCells[r][c];
       const isB = code === 2 || code === 3;
-      ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
+      const isDcCell = code === 1 || code === 3;
+      ctx.fillStyle = patternView
+        ? (isDcCell ? PATTERN_FG : PATTERN_BG)
+        : (isB ? p.colorBHex : p.colorAHex);
       const x = (c - colStart) * cs;
       ctx.fillRect(x, y, cs, cs);
       if (isDone(r, c)) {
@@ -1392,7 +1386,10 @@ function renderChartGrid(p) {
       if (code !== 1 && code !== 3) continue;
       const isB = code === 2 || code === 3;
       const x0 = (c - colStart) * cs, y0 = r * cs;
-      ctx.strokeStyle = isB ? '#ffffff' : '#000000';
+      // Pattern view's dc fill (PATTERN_FG) is always dark, so the X always
+      // needs a light stroke there; raw view still picks stroke color off
+      // the real yarn fill underneath it.
+      ctx.strokeStyle = patternView ? PATTERN_BG : (isB ? '#ffffff' : '#000000');
       ctx.globalAlpha = 0.85;
       ctx.lineWidth = Math.max(1, cs * 0.09);
       ctx.beginPath();
@@ -1436,14 +1433,17 @@ function renderChartGrid(p) {
         const ax = (c - colStart) * cs + cs / 2;
         const ay = targetR * cs + cs / 2 + 1;
         // High-contrast halo + crisp glyph so the anchor remains readable on
-        // both light and dark yarn colors.
+        // both light and dark yarn colors. The target cell is always a
+        // non-dc (background) cell, so in pattern view its fill is always
+        // the fixed light PATTERN_BG, regardless of targetIsB.
+        const bgIsDark = patternView ? false : targetIsB;
         ctx.globalAlpha = 0.98;
         ctx.lineJoin = 'round';
         ctx.lineWidth = Math.max(2.2, cs * 0.16);
-        ctx.strokeStyle = targetIsB ? '#000000' : '#ffffff';
+        ctx.strokeStyle = bgIsDark ? '#000000' : '#ffffff';
         ctx.strokeText(symbol, ax, ay);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = targetIsB ? '#ffffff' : '#000000';
+        ctx.fillStyle = bgIsDark ? '#ffffff' : '#000000';
         ctx.fillText(symbol, ax, ay);
       }
     }
@@ -1472,7 +1472,6 @@ function renderChartGrid(p) {
     const r = Math.floor(y / cs);
     if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return;
     g.cells[r][c] = (g.cells[r][c] + 1) % 4;
-    g._patternCells = null; // invalidate pattern-view cache — donor rows changed
     saveAll();
     renderChartGrid(p);
   } : null;
