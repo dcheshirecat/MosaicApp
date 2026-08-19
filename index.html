@@ -960,14 +960,21 @@ async function startPdfTextImport(file) {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    const pageOps = [];
-    for (let pn = 1; pn <= doc.numPages; pn++) {
-      const page = await doc.getPage(pn);
-      const opList = await page.getOperatorList();
-      pageOps.push(opList);
+    const pages = [];
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      // disableCombineTextItems avoids pdf.js inserting a synthetic space
+      // between adjacent same-line glyphs — without it, consecutive stitch
+      // symbols get corrupted spacing and every position measurement
+      // downstream (pitch, column index) comes out wrong.
+      const tc = await page.getTextContent({ disableCombineTextItems: true });
+      pages.push({ pageNum: n, page, items: tc.items || [], styles: tc.styles || {} });
     }
 
-    const result = parseStitchFiddlePdfOperatorLists(pageOps, pdfjsLib.OPS);
+    label.textContent = 'Parsing chart…';
+    await new Promise(r => setTimeout(r, 20)); // let the label paint first
+
+    const result = await parseStitchFiddlePdfPages(pages);
     if (!result) {
       label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart found`;
       area.className = '';
@@ -975,210 +982,311 @@ async function startPdfTextImport(file) {
       return;
     }
 
-    document.getElementById('f-rows').value    = result.rows;
+    document.getElementById('f-rows').value = result.rows;
     document.getElementById('f-stitches').value = result.cols;
-    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells, rowBand: result.rowBand, sourceRows: result.sourceRows };
+    if (result.colorAHex) { document.getElementById('f-color-a-hex').value = result.colorAHex; if (typeof setColorPickerValue === 'function') setColorPickerValue('a', result.colorAHex); }
+    if (result.colorBHex) { document.getElementById('f-color-b-hex').value = result.colorBHex; if (typeof setColorPickerValue === 'function') setColorPickerValue('b', result.colorBHex); }
+
+    pendingChartGrid = { rows: result.rows, cols: result.cols, cells: result.cells, rowBand: result.rowBand, sourceRows: result.sourceRows };
     pendingChartSource = 'grid';
-    label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts`;
-    area.className     = 'has-grid';
+    label.textContent = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts`;
+    area.className = 'has-grid';
     setChartModeTab('pdf');
     toast(`Chart imported: ${result.rows} rows × ${result.cols} stitches`);
   } catch (err) {
     console.error('PDF import error', err);
     label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
-    area.className    = '';
+    area.className = '';
     toast('PDF read error');
   }
 }
 
-// Reconstructs a Stitch Fiddle chart from the PDF's raw drawing commands
-// (page.getOperatorList()) instead of page.getTextContent().
-//
-// getTextContent() reconstructs "words" from the underlying glyph stream
-// and — for this custom symbol font — inserts a synthetic space between
-// literally every glyph (because the font's declared advance width doesn't
-// match the real inter-glyph spacing). That corrupted both the measured
-// column pitch (roughly halved, which is why charts came out ~2x too wide)
-// and the position of every '!' mark. The raw operator list has no such
-// reconstruction step: every glyph is its own showText call with an exact
-// position, and every stitch cell's fill color is a separate, exact
-// setFillRGBColor + constructPath pair — giving us the real picture data
-// (which color shows at each cell), not just which color the row's yarn
-// is. The '!' glyph (double crochet / overlay stitch) is completely
-// independent of that picture data — it is not used to infer cell color.
-function parseStitchFiddlePdfOperatorLists(pageOps, OPS) {
-  const opNames = {};
-  for (const k in OPS) opNames[OPS[k]] = k;
+// Pairs each custom-font icon glyph in the legend with its nearest text
+// label on the same line ("Double crochet", "Border stitch", etc.) to
+// build a codepoint → meaning map, derived fresh from each PDF's own
+// legend rather than hardcoded — Stitch Fiddle draws TWO ink-contrasted
+// variants of the double-crochet "X" mark (a light one for use on Color B
+// cells, a dark one for Color A cells), and both must count as "raised
+// stitch" or roughly half of them get silently missed.
+function isStitchFiddleIconFont(fontName, styles) {
+  const st = styles && styles[fontName];
+  const fam = (st && st.fontFamily) || '';
+  return /stitchfiddle|symbol/i.test(fam);
+}
+function buildStitchFiddleLegend(items, styles) {
+  const icons = [];
+  const labelChars = [];
+  for (const it of items) {
+    if (!it.str) continue;
+    const isIcon = isStitchFiddleIconFont(it.fontName, styles);
+    if (isIcon && it.str.length === 1) {
+      icons.push({ ch: it.str, x: it.transform[4], y: it.transform[5] });
+    } else if (!isIcon && it.str.trim().length) {
+      labelChars.push({ x: it.transform[4], y: it.transform[5], str: it.str });
+    }
+  }
+  if (!icons.length || !labelChars.length) return new Map();
+
+  const lineMap = [];
+  for (const c of labelChars) {
+    let line = lineMap.find(l => Math.abs(l.y - c.y) < 1.2);
+    if (!line) { line = { y: c.y, parts: [] }; lineMap.push(line); }
+    line.parts.push(c);
+  }
+  const lines = lineMap.map(l => {
+    l.parts.sort((a, b) => a.x - b.x);
+    return { y: l.y, text: l.parts.map(p => p.str).join('').replace(/\s+/g, ' ').trim() };
+  });
+
+  const meaningFor = (text) => {
+    const t = text.toLowerCase();
+    if (t.includes('double crochet')) return 'dc';
+    if (t.includes('border stitch')) return 'border';
+    if (t.includes('color a')) return 'colorA';
+    if (t.includes('color b')) return 'colorB';
+    if (t.includes('chain')) return 'chain';
+    return null;
+  };
+
+  const map = new Map();
+  for (const icon of icons) {
+    let best = null, bestDy = Infinity;
+    for (const line of lines) {
+      const dy = Math.abs(line.y - icon.y);
+      if (dy < 1.5 && dy < bestDy) { best = line; bestDy = dy; }
+    }
+    if (!best) continue;
+    const meaning = meaningFor(best.text);
+    if (meaning) map.set(icon.ch, meaning);
+  }
+  return map;
+}
+
+async function renderPdfPageCached(cache, pageInfo, scale) {
+  const key = pageInfo.pageNum;
+  if (cache.has(key)) return cache.get(key);
+  const viewport = pageInfo.page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext('2d');
+  await pageInfo.page.render({ canvasContext: ctx, viewport }).promise;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const entry = { viewport, imageData };
+  cache.set(key, entry);
+  return entry;
+}
+function samplePatch(vx, vy, r, imageData) {
+  const iw = imageData.width, ih = imageData.height, buf = imageData.data;
+  let sr = 0, sg = 0, sb = 0, n = 0;
+  for (let dy = -r; dy <= r; dy++) {
+    const py = Math.max(0, Math.min(ih - 1, Math.round(vy + dy)));
+    for (let dx = -r; dx <= r; dx++) {
+      const px = Math.max(0, Math.min(iw - 1, Math.round(vx + dx)));
+      const idx = (py * iw + px) * 4;
+      sr += buf[idx]; sg += buf[idx + 1]; sb += buf[idx + 2]; n++;
+    }
+  }
+  return [sr / n, sg / n, sb / n];
+}
+
+// Reconstructs the chart using only stable, version-independent pdf.js
+// APIs: getTextContent() for every glyph's exact position (row-number
+// labels, the $/% "which yarn is in hand this row" tag, and the raised-
+// stitch marks), and a rendered canvas for each cell's real picture color
+// — sampling actual pixels sidesteps the internal vector-fill operator
+// format entirely, which is what made the previous rect-based parser
+// fragile across pdf.js versions.
+async function parseStitchFiddlePdfPages(pages) {
+  let legendMap = new Map();
+  for (const p of pages) {
+    const m = buildStitchFiddleLegend(p.items, p.styles);
+    if (m.size > legendMap.size) legendMap = m;
+  }
+  const dcChars = new Set([...legendMap.entries()].filter(([, m]) => m === 'dc').map(([ch]) => ch));
+  if (!dcChars.size) dcChars.add('!'); // fallback if legend detection fails
+
+  let refA = null, refB = null; // actual Color A / B swatch RGB, for classification
+  const colorPage = pages.find(p => p.items.some(it => it.str && [...it.str].some(ch => legendMap.get(ch) === 'colorA' || legendMap.get(ch) === 'colorB')));
 
   const pageCandidates = [];
 
-  for (let pageIndex = 0; pageIndex < pageOps.length; pageIndex++) {
-    const opList = pageOps[pageIndex];
-    if (!opList || !opList.fnArray || opList.fnArray.length < 50) continue;
-
-    // ── 1. Walk the operator list once, collecting glyphs + cell rects ──
-    const glyphs = []; // {x,y,ch,font}
-    const rects  = []; // {x0,y0,x1,y1,fill:['#rrggbb']}
-    let curFont = null;
-    let curFill = null;
-    for (let i = 0; i < opList.fnArray.length; i++) {
-      const name = opNames[opList.fnArray[i]];
-      const args = opList.argsArray[i];
-      if (name === 'setFont') curFont = args[0];
-      else if (name === 'setFillRGBColor' || name === 'setFillColorN') curFill = args;
-      else if (name === 'showText') {
-        let mv = null;
-        for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
-          if (opNames[opList.fnArray[j]] === 'moveText') { mv = opList.argsArray[j]; break; }
-        }
-        if (mv) for (const g of args[0]) {
-          if (g && typeof g.unicode === 'string') glyphs.push({ x: mv[0], y: mv[1], ch: g.unicode, font: curFont });
-        }
-      } else if (name === 'constructPath') {
-        const bbox = args[2];
-        if (bbox && bbox.length === 4) rects.push({ x0: bbox[0], y0: bbox[1], x1: bbox[2], y1: bbox[3], fill: curFill });
+  for (const p of pages) {
+    const items = p.items;
+    const glyphs = [];
+    for (const it of items) {
+      if (!it.str) continue;
+      const n = it.str.length, w = it.width || 0;
+      for (let i = 0; i < n; i++) {
+        const frac = n > 1 ? i / n : 0;
+        glyphs.push({ ch: it.str[i], x: it.transform[4] + frac * w, y: it.transform[5] });
       }
     }
-    if (glyphs.length < 200 || rects.length < 200) continue;
+    if (glyphs.length < 200) continue;
 
-    // ── 2. Cell pitch + origin, from the rect grid (most reliable signal) ──
-    function clusterVals(vals, tol) {
-      const sorted = vals.slice().sort((a, b) => a - b);
-      const clusters = []; let cur = [sorted[0]];
-      for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] - cur[cur.length - 1] <= tol) cur.push(sorted[i]);
-        else { clusters.push(cur); cur = [sorted[i]]; }
-      }
-      clusters.push(cur);
-      return clusters.map(c => c.reduce((a, b) => a + b, 0) / c.length);
-    }
-    const rectWidths = rects.map(r => r.x1 - r.x0).filter(w => w > 0.3 && w < 20);
-    rectWidths.sort((a, b) => a - b);
-    const roughPitch = rectWidths.length ? rectWidths[Math.floor(rectWidths.length / 2)] : null;
+    const digitGlyphs = glyphs.filter(g => /^[0-9]$/.test(g.ch));
+    if (digitGlyphs.length < 20) continue;
+
+    // rough pitch from overall glyph y-clustering, used only to group
+    // same-line digit labels
+    const allYs = [...new Set(glyphs.map(g => Math.round(g.y * 10) / 10))].sort((a, b) => a - b);
+    const roughGaps = [];
+    for (let i = 1; i < allYs.length; i++) { const d = allYs[i] - allYs[i - 1]; if (d > 0.3 && d < 20) roughGaps.push(d); }
+    roughGaps.sort((a, b) => a - b);
+    const roughPitch = roughGaps.length ? roughGaps[Math.floor(roughGaps.length / 2)] : null;
     if (!roughPitch) continue;
-    // keep only square, cell-sized rects (drop hairline gridline strokes / page border)
-    const cellRects = rects.filter(r => {
-      const w = r.x1 - r.x0, h = r.y1 - r.y0;
-      return Math.abs(w - roughPitch) < 0.5 && Math.abs(h - roughPitch) < 0.5;
-    });
-    if (cellRects.length < 200) continue;
 
-    const xClusters = clusterVals(cellRects.map(r => r.x0), 1.0);
-    const originX = xClusters[0];
-    const pitch = xClusters.length > 1
-      ? (xClusters[xClusters.length - 1] - xClusters[0]) / (xClusters.length - 1)
-      : roughPitch;
-
-    // ── 3. Row-number labels: printed once in the left margin and once in
-    //    the right margin per row, identical digits both times. The x-gap
-    //    between those two copies is also how we find the true grid extent.
-    const labelGlyphs = glyphs.filter(g => /^[0-9]$/.test(g.ch));
-    function groupByY(items, tol) {
+    function groupByY(arr, tol) {
+      const sorted = arr.slice().sort((a, b) => a.y - b.y);
       const buckets = [];
-      items.slice().sort((a, b) => a.y - b.y).forEach(it => {
+      for (const it of sorted) {
         const g = buckets.length ? buckets[buckets.length - 1] : null;
         if (!g || Math.abs(g.y - it.y) > tol) buckets.push({ y: it.y, items: [it] });
         else g.items.push(it);
-      });
+      }
       return buckets;
     }
-    const labelRows = groupByY(labelGlyphs, pitch * 0.4);
+    const labelRows = groupByY(digitGlyphs, roughPitch * 0.4);
+
+    // row numbers are printed once in the left margin and once in the
+    // right margin, identical digits both times — pairing them up both
+    // confirms we've found real row labels and locates row 0 (the
+    // foundation chain, excluded from the pattern row count)
     const rowNumberByY = new Map();
     for (const grp of labelRows) {
-      const items = grp.items.slice().sort((a, b) => a.x - b.x);
+      const its = grp.items.slice().sort((a, b) => a.x - b.x);
       let splitIdx = -1, maxGap = 0;
-      for (let i = 1; i < items.length; i++) {
-        const gap = items[i].x - items[i - 1].x;
-        if (gap > maxGap) { maxGap = gap; splitIdx = i; }
-      }
-      if (splitIdx <= 0 || maxGap < pitch * 3) continue;
-      const leftTok  = items.slice(0, splitIdx).map(it => it.ch).join('');
-      const rightTok = items.slice(splitIdx).map(it => it.ch).join('');
+      for (let i = 1; i < its.length; i++) { const gap = its[i].x - its[i - 1].x; if (gap > maxGap) { maxGap = gap; splitIdx = i; } }
+      if (splitIdx <= 0 || maxGap < roughPitch * 3) continue;
+      const leftTok = its.slice(0, splitIdx).map(x => x.ch).join('');
+      const rightTok = its.slice(splitIdx).map(x => x.ch).join('');
       if (leftTok !== rightTok || !/^\d+$/.test(leftTok)) continue;
       rowNumberByY.set(grp.y, leftTok === '0' ? 'chain' : parseInt(leftTok, 10));
     }
     if (rowNumberByY.size < 10) continue;
-    const labelYs = [...rowNumberByY.keys()];
+
+    // precise pitch: median gap between consecutive row-label Y positions
+    // (averaged over the whole chart height — far less noisy than trying
+    // to measure it from any single glyph's declared advance width)
+    const labelYsSorted = [...rowNumberByY.keys()].sort((a, b) => a - b);
+    const rowGaps = [];
+    for (let i = 1; i < labelYsSorted.length; i++) rowGaps.push(labelYsSorted[i] - labelYsSorted[i - 1]);
+    rowGaps.sort((a, b) => a - b);
+    const pitch = rowGaps.length ? rowGaps[Math.floor(rowGaps.length / 2)] : roughPitch;
+
     function nearestRow(y) {
       let best = null, bestDist = Infinity;
-      for (const ly of labelYs) { const d = Math.abs(ly - y); if (d < bestDist) { bestDist = d; best = ly; } }
+      for (const ly of labelYsSorted) { const d = Math.abs(ly - y); if (d < bestDist) { bestDist = d; best = ly; } }
       return bestDist <= pitch * 1.5 ? rowNumberByY.get(best) : null;
     }
 
-    // ── 4. Row's own working color, from the $/% marker glyph at the
-    //    leftmost physical column (column 0 — outside the counted stitch
-    //    range, purely a legend tag for which yarn is in hand this row) ──
+    // origin: the $/% tag glyph sits at physical column 0, just left of
+    // stitch 1 — use a low percentile (not bare min) to stay resistant to
+    // any single stray outlier glyph
+    const tagGlyphs = glyphs.filter(g => g.ch === '$' || g.ch === '%');
+    if (tagGlyphs.length < 10) continue;
+    const originXs = tagGlyphs.map(g => g.x).sort((a, b) => a - b);
+    const originX = originXs[Math.floor(originXs.length * 0.05)];
+
+    // row band: which single color is actually on the hook this row —
+    // independent of any individual cell's picture color
     const rowBandByRowNum = new Map();
-    for (const g of glyphs) {
-      if (g.ch !== '$' && g.ch !== '%') continue;
+    const rowYByNum = new Map();
+    for (const g of tagGlyphs) {
       const col = Math.round((g.x - originX) / pitch);
       if (col !== 0) continue;
       const rn = nearestRow(g.y);
       if (rn === null || rn === 'chain') continue;
       rowBandByRowNum.set(rn, g.ch === '$' ? 'A' : 'B');
+      if (!rowYByNum.has(rn)) rowYByNum.set(rn, g.y);
     }
+    if (rowBandByRowNum.size < 10) continue;
 
-    // ── 5. Raised / overlay stitches — the '!' glyph only. This is a
-    //    completely separate marker from cell color; it is never used to
-    //    infer or override a cell's picture color. ──
+    // raised (double-crochet / overlay) stitches — both contrast-matched
+    // glyph variants from the legend count
     const raisedSet = new Set();
     for (const g of glyphs) {
-      if (g.ch !== '!') continue;
+      if (!dcChars.has(g.ch)) continue;
       const rn = nearestRow(g.y);
       if (rn === null || rn === 'chain') continue;
       const col = Math.round((g.x - originX) / pitch);
       raisedSet.add(rn + ',' + col);
     }
 
-    // ── 6. Per-cell picture color, from the rect fill — the real image ──
-    const colorMap = new Map();
-    for (const r of cellRects) {
-      const cy = (r.y0 + r.y1) / 2;
-      const rn = nearestRow(cy);
-      if (rn === null || rn === 'chain') continue;
-      const col = Math.round((r.x0 - originX) / pitch);
-      const isWhite = r.fill && r.fill[0] === '#ffffff';
-      colorMap.set(rn + ',' + col, isWhite ? 1 : 0);
-    }
-
-    // ── 7. Real stitch grid = physical columns 1..186 (col 0 and the last
-    //    physical column are the $/% legend tags, not real stitches; the
-    //    border-stitch cells sit just inside them and ARE real stitches).
     const STITCH_MIN = 1, STITCH_MAX = 186;
     const rowNums = [...rowBandByRowNum.keys()].sort((a, b) => a - b);
     if (rowNums.length < 10) continue;
 
-    const cellsByRowNum = new Map();
-    let coverageOk = true;
-    for (const rn of rowNums) {
-      const cells = [];
-      for (let col = STITCH_MIN; col <= STITCH_MAX; col++) {
-        const v = colorMap.get(rn + ',' + col);
-        if (v === undefined) { coverageOk = false; cells.push(0); continue; }
-        const raised = raisedSet.has(rn + ',' + col);
-        cells.push(v * 2 + (raised ? 1 : 0)); // 0/2 = plain A/B picture color, 1/3 = same + overlay stitch
-      }
-      cellsByRowNum.set(rn, cells);
-    }
-    if (!coverageOk && rowNums.length < 20) continue; // too unreliable to trust
-
-    pageCandidates.push({ pageIndex, rowNums, cellsByRowNum, rowBandByRowNum, cols: STITCH_MAX - STITCH_MIN + 1 });
+    pageCandidates.push({ p, rowNums, rowBandByRowNum, rowYByNum, raisedSet, originX, pitch, cols: STITCH_MAX - STITCH_MIN + 1, STITCH_MIN, STITCH_MAX });
   }
 
   if (!pageCandidates.length) return null;
   pageCandidates.sort((a, b) => b.rowNums.length - a.rowNums.length);
   const best = pageCandidates[0];
 
-  // highest row number = visual top = cells[0] (matches getGridCell's
-  // rowIndexFromTop = g.rows - row convention used throughout the tracker)
-  const orderedRowNums = best.rowNums.slice().sort((a, b) => b - a);
+  // reference swatch colors, so cell classification works for any two
+  // colors the pattern actually uses (not just black/white)
+  const scale = 4;
+  const cache = new Map();
+  if (colorPage) {
+    const glyphs = [];
+    for (const it of colorPage.items) {
+      if (!it.str) continue;
+      const n = it.str.length, w = it.width || 0;
+      for (let i = 0; i < n; i++) {
+        const m = legendMap.get(it.str[i]);
+        if (m === 'colorA' || m === 'colorB') {
+          const frac = n > 1 ? i / n : 0;
+          glyphs.push({ m, x: it.transform[4] + frac * w, y: it.transform[5] });
+        }
+      }
+    }
+    const a = glyphs.find(g => g.m === 'colorA');
+    const b = glyphs.find(g => g.m === 'colorB');
+    if (a || b) {
+      const render = await renderPdfPageCached(cache, colorPage, scale);
+      if (a) { const [vx, vy] = render.viewport.convertToViewportPoint(a.x, a.y); refA = samplePatch(vx, vy - 1, 2, render.imageData); }
+      if (b) { const [vx, vy] = render.viewport.convertToViewportPoint(b.x, b.y); refB = samplePatch(vx, vy - 1, 2, render.imageData); }
+    }
+  }
+  function classifyIsB(rgb) {
+    if (refA && refB) {
+      const dA = (rgb[0]-refA[0])**2 + (rgb[1]-refA[1])**2 + (rgb[2]-refA[2])**2;
+      const dB = (rgb[0]-refB[0])**2 + (rgb[1]-refB[1])**2 + (rgb[2]-refB[2])**2;
+      return dB < dA;
+    }
+    const lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+    return lum < 128;
+  }
 
+  const gridRender = await renderPdfPageCached(cache, best.p, scale);
+  const patchR = Math.max(1, Math.floor(scale * best.pitch * 0.18));
+  const orderedRowNums = best.rowNums.slice().sort((a, b) => b - a); // highest row = visual top
+
+  const cells = [];
+  for (const rn of orderedRowNums) {
+    const yPdf = best.rowYByNum.get(rn);
+    const rowArr = new Array(best.cols);
+    for (let col = best.STITCH_MIN; col <= best.STITCH_MAX; col++) {
+      const xPdf = best.originX + col * best.pitch;
+      const [vx, vy] = gridRender.viewport.convertToViewportPoint(xPdf, yPdf);
+      const rgb = samplePatch(vx, vy, patchR, gridRender.imageData);
+      const isB = classifyIsB(rgb);
+      const raised = best.raisedSet.has(rn + ',' + col);
+      rowArr[col - best.STITCH_MIN] = (isB ? 2 : 0) + (raised ? 1 : 0);
+    }
+    cells.push(rowArr);
+  }
+
+  const toHex = (rgb) => rgb ? '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('') : null;
   return {
     rows: orderedRowNums.length,
     cols: best.cols,
-    cells: orderedRowNums.map(rn => best.cellsByRowNum.get(rn)),
+    cells,
     rowBand: orderedRowNums.map(rn => best.rowBandByRowNum.get(rn) || 'A'),
-    sourceRows: orderedRowNums
+    sourceRows: orderedRowNums,
+    colorAHex: toHex(refA),
+    colorBHex: toHex(refB)
   };
 }
 
