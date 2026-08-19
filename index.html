@@ -1047,21 +1047,38 @@ function parseStitchFiddlePdfItems(pageItems) {
     // in these PDFs — they're just a horizontal position skip with no glyph
     // at all — so the gaps between items must be measured in pixels and
     // converted to cell counts; string concatenation alone loses them.
-    // Primary source: the width of solo single-character chart glyphs
-    // ($ % ! " # &) inside the chart's own column region — a lone glyph's
-    // own rendered width IS exactly one cell's width, with no averaging-
-    // over-a-run bias. Restricting to chart glyphs in the chart region
-    // matters: row-number labels, headers, etc. use a different, usually
-    // narrower font and would otherwise skew the median pitch down, which
-    // silently inflates the column count. Secondary: width/length of
-    // multi-char runs. Fallback: vertical row spacing (cells are square).
-    const singleCharPitches = items
-      .filter(it => it.str.length === 1 && it.width > 0 && it.x >= leftX - 2 && /[$%!"#&]/.test(it.str))
-      .map(it => it.width)
-      .filter(p => p > 0.3 && p < 20);
-    singleCharPitches.sort((a, b) => a - b);
-    const singlePitch = singleCharPitches.length >= 5
-      ? singleCharPitches[Math.floor(singleCharPitches.length / 2)] : null;
+    // A single glyph's own reported "width" is its font advance width,
+    // which is NOT reliably the same as the fixed cell spacing the chart is
+    // laid out on ('!' and '$' are simply different-shaped characters, even
+    // positioned on a uniform grid) — that's an unreliable signal no matter
+    // which characters it's measured from.
+    // Primary source instead: the border stitch (" or #) is, by this
+    // format's own definition, always the very first stitch — positioned
+    // immediately after the color marker with zero blank cells between
+    // them. So the gap from the marker to the very next item is guaranteed
+    // to be exactly one true cell width, with no averaging or font-metric
+    // assumptions involved. Secondary: width/length of multi-char runs.
+    // Fallback: vertical row spacing (cells are square).
+    const edgePitches = [];
+    for (const g of chartGroups) {
+      if (g.colorItem.str.length >= 2 && g.colorItem.width > 0) {
+        // Marker + border stitch (and maybe more) combined in one drawn
+        // item — these characters are guaranteed adjacent with no gap.
+        const p = g.colorItem.width / (g.colorItem.str.length - 1 || 1);
+        if (p > 0.3 && p < 20) edgePitches.push(p);
+      } else {
+        const sortedRowItems = g.items.slice().sort((a, b) => a.x - b.x);
+        const idx = sortedRowItems.indexOf(g.colorItem);
+        const next = sortedRowItems[idx + 1];
+        if (next) {
+          const d = next.x - g.colorItem.x;
+          if (d > 0.3 && d < 20) edgePitches.push(d);
+        }
+      }
+    }
+    edgePitches.sort((a, b) => a - b);
+    const edgePitch = edgePitches.length >= 10
+      ? edgePitches[Math.floor(edgePitches.length / 2)] : null;
 
     const measuredPitches = items
       .filter(it => it.str.length >= 2 && it.width > 0 && it.x >= leftX - 5)
@@ -1080,7 +1097,7 @@ function parseStitchFiddlePdfItems(pageItems) {
     yGaps.sort((a, b) => a - b);
     const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
 
-    const charPitch = singlePitch || measuredPitch || rowPitch;
+    const charPitch = edgePitch || measuredPitch || rowPitch;
     if (!charPitch || !Number.isFinite(charPitch) || charPitch <= 0) continue;
 
     // ── 5. Column count from right color markers ────────────────────────────
