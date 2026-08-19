@@ -129,7 +129,6 @@
   #chart-tools button { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 6px; width: 28px; height: 28px; font-size: 0.85rem; cursor: pointer; }
   #btn-fix-chart.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   #btn-window-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  #btn-pattern-view.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   #chart-legend-pop { display: none; margin: 0 12px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   #chart-legend-pop.open { display: block; }
@@ -392,7 +391,6 @@
         <button id="btn-legend" title="Symbol legend">?</button>
         <button id="btn-fix-chart" title="Fix mismarked cells">✎</button>
         <button id="btn-stitch-marker" title="Drop stitch marker">📍</button>
-        <button id="btn-pattern-view" title="Toggle pattern / stripes view">🖼</button>
       </div>
     </div>
     <div id="chart-legend-pop">
@@ -510,7 +508,6 @@ let pendingImageData = null; // base64 for new chart-image upload
 let pendingChartGrid = null; // {rows, cols, cells} for new pdf-imported chart
 let pendingChartSource = null; // 'image' | 'grid' | null (untouched)
 let fixChartMode = false;
-let patternView = false; // false = raw color-band stripes, true = visual pattern (fills alternating blank rows from their neighbor so DC placements read as a picture)
 let gridCellSize = 10; // px, adjustable via zoom buttons
 let settings = { windowedView: false, windowSize: 10, accentColor: '#e94560' }; // app-wide viewing preferences
 const STITCH_WINDOW = 10; // default "N stitches at a time" view width, in columns
@@ -940,42 +937,14 @@ document.getElementById('btn-new').addEventListener('click', () => openForm(null
 //   !     = double crochet / overlay stitch (the X mark)
 //   space = single crochet (background)
 //   &     = foundation chain (row 0)
-// Cell codes: 0=A+SC, 1=A+DC, 2=B+SC, 3=B+DC, 9=no stitch here (tapered/shaped row)
+// Cell codes: 0=A+SC, 1=A+DC, 2=B+SC, 3=B+DC
 //
-// IMPORTANT — how a real row's text is actually laid out: the row number is
-// printed glued directly onto the row's own frame character, with NO space
-// or separator, e.g. a real row reads `47$"                    "$47`, not
-// `$" ... "$`. Any parser that expects a row's text to START with $ or %
-// will miss most rows (only ones where the row number happened to land in
-// a different text item than the frame character would ever match) — that
-// was the root cause of earlier "only some rows imported" and "picture
-// looks like flat stripes, not the real chart" bugs, because rows that
-// silently failed to parse fell back to a flat, DC-less row.
-//
-// This version reads every character's own (x, y) position directly —
-// no line-reconstruction, no left/right-of-page heuristics, no per-row
-// font-width guessing, no color-by-parity fallback:
-//   1. split every pdf.js text item into individual characters, using the
-//      item's own reported width to estimate each character's x
-//   2. group characters into rows purely by Y proximity, using a gap
-//      threshold auto-detected from the actual spacing on the page (so it
-//      adapts to dense, many-row charts as well as sparse ones)
-//   3. within a row, strip the leading digit run — that's the row number —
-//      and read the row's color straight off the very next character ($/%)
-//   4. compute ONE shared column pitch + left edge for the WHOLE chart,
-//      measured only from real stitch characters (space / ! / &), never
-//      from row-number digits or border symbols, whose glyph widths differ
-//      and will otherwise skew the pitch and inflate the stitch count
-//   5. map every stitch character to its exact column from that shared
-//      grid, so a narrower/tapered row still lines up in the same columns
-//      as a full-width row and every X lands exactly where Stitch Fiddle
-//      drew it — columns with no character at all become code 9 (no
-//      stitch there), not a guessed background color
-//   6. order rows by their real printed row number, HIGHEST first — that
-//      matches how the renderer already expects cells[]: canvas row 0
-//      (the top of the chart) is the LAST row worked, canvas row
-//      (rows-1) (the bottom) is row 1. Reversing this — sorting lowest
-//      row number first — is what produced the upside-down chart.
+// The parser groups all text items by Y baseline, finds the left color
+// marker ($ or %) for each row, then maps every ! to its column using the
+// item's X coordinate.  It deliberately handles both "combined" emission
+// (the whole row in one text item) and "split" emission (each character as
+// a separate item), which varies across pdf.js versions and Stitch Fiddle
+// export options.
 
 async function startPdfTextImport(file) {
   const ok = await pdfjsReady;
@@ -991,28 +960,14 @@ async function startPdfTextImport(file) {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    // Collect every character on every page with its precise position.
-    const allChars = [];
+    const pageOps = [];
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const page = await doc.getPage(pn);
-      const tc = await page.getTextContent({ includeMarkedContent: false });
-      for (const item of tc.items) {
-        const str = item.str != null ? String(item.str) : '';
-        if (!str) continue;
-        const n = str.length;
-        const x0 = (item.transform && item.transform.length >= 6) ? Number(item.transform[4]) || 0 : 0;
-        const y0 = (item.transform && item.transform.length >= 6) ? Number(item.transform[5]) || 0 : 0;
-        // A pdf.js item can bundle a whole run of characters together;
-        // assume even glyph pitch across the run (true for this
-        // monospaced grid output) to recover each character's own x.
-        const step = n > 1 ? (Number(item.width) || 0) / n : 0;
-        for (let i = 0; i < n; i++) {
-          allChars.push({ ch: str[i], x: x0 + step * i, y: y0, page: pn });
-        }
-      }
+      const opList = await page.getOperatorList();
+      pageOps.push(opList);
     }
 
-    const result = parseStitchFiddleChars(allChars);
+    const result = parseStitchFiddlePdfOperatorLists(pageOps, pdfjsLib.OPS);
     if (!result) {
       label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart found`;
       area.className = '';
@@ -1022,7 +977,7 @@ async function startPdfTextImport(file) {
 
     document.getElementById('f-rows').value    = result.rows;
     document.getElementById('f-stitches').value = result.cols;
-    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells };
+    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells, rowBand: result.rowBand, sourceRows: result.sourceRows };
     pendingChartSource = 'grid';
     label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts`;
     area.className     = 'has-grid';
@@ -1036,127 +991,195 @@ async function startPdfTextImport(file) {
   }
 }
 
-// Given a sorted list of positive gaps, find the natural split between
-// "characters on the same printed row" (small gaps) and "the next row
-// down" (large gaps). Falls back to a small constant if no clean split
-// is found (e.g. too few rows to detect a pattern).
-function findGapThreshold(sortedGaps) {
-  if (sortedGaps.length < 2) return 1.0;
-  let bestRatio = 1, bestIdx = -1;
-  for (let i = 1; i < sortedGaps.length; i++) {
-    const prev = sortedGaps[i - 1];
-    if (prev <= 0.01) continue;
-    const ratio = sortedGaps[i] / prev;
-    if (ratio > bestRatio) { bestRatio = ratio; bestIdx = i; }
-  }
-  if (bestIdx < 1 || bestRatio < 1.3) return 1.0;
-  return Math.sqrt(sortedGaps[bestIdx - 1] * sortedGaps[bestIdx]);
-}
+// Reconstructs a Stitch Fiddle chart from the PDF's raw drawing commands
+// (page.getOperatorList()) instead of page.getTextContent().
+//
+// getTextContent() reconstructs "words" from the underlying glyph stream
+// and — for this custom symbol font — inserts a synthetic space between
+// literally every glyph (because the font's declared advance width doesn't
+// match the real inter-glyph spacing). That corrupted both the measured
+// column pitch (roughly halved, which is why charts came out ~2x too wide)
+// and the position of every '!' mark. The raw operator list has no such
+// reconstruction step: every glyph is its own showText call with an exact
+// position, and every stitch cell's fill color is a separate, exact
+// setFillRGBColor + constructPath pair — giving us the real picture data
+// (which color shows at each cell), not just which color the row's yarn
+// is. The '!' glyph (double crochet / overlay stitch) is completely
+// independent of that picture data — it is not used to infer cell color.
+function parseStitchFiddlePdfOperatorLists(pageOps, OPS) {
+  const opNames = {};
+  for (const k in OPS) opNames[OPS[k]] = k;
 
-// Parse characters (with x / y / page) extracted from a Stitch Fiddle PDF.
-// Returns { rows, cols, cells } or null if no chart found.
-function parseStitchFiddleChars(chars) {
-  if (!chars.length) return null;
+  const pageCandidates = [];
 
-  // 1) Group into rows by Y, per page, using an auto-detected gap
-  //    threshold rather than a fixed pixel count.
-  const byPage = new Map();
-  for (const c of chars) {
-    if (!byPage.has(c.page)) byPage.set(c.page, []);
-    byPage.get(c.page).push(c);
-  }
+  for (let pageIndex = 0; pageIndex < pageOps.length; pageIndex++) {
+    const opList = pageOps[pageIndex];
+    if (!opList || !opList.fnArray || opList.fnArray.length < 50) continue;
 
-  const rowGroups = [];
-  for (const [, pageChars] of byPage) {
-    const ys = [...new Set(pageChars.map(c => c.y))].sort((a, b) => a - b);
-    const gaps = [];
-    for (let i = 1; i < ys.length; i++) gaps.push(ys[i] - ys[i - 1]);
-    gaps.sort((a, b) => a - b);
-    const threshold = findGapThreshold(gaps);
-
-    const sorted = pageChars.slice().sort((a, b) => a.y - b.y || a.x - b.x);
-    let cur = null, lastY = null;
-    for (const c of sorted) {
-      if (cur === null || Math.abs(c.y - lastY) > threshold) {
-        cur = [];
-        rowGroups.push(cur);
+    // ── 1. Walk the operator list once, collecting glyphs + cell rects ──
+    const glyphs = []; // {x,y,ch,font}
+    const rects  = []; // {x0,y0,x1,y1,fill:['#rrggbb']}
+    let curFont = null;
+    let curFill = null;
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const name = opNames[opList.fnArray[i]];
+      const args = opList.argsArray[i];
+      if (name === 'setFont') curFont = args[0];
+      else if (name === 'setFillRGBColor' || name === 'setFillColorN') curFill = args;
+      else if (name === 'showText') {
+        let mv = null;
+        for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
+          if (opNames[opList.fnArray[j]] === 'moveText') { mv = opList.argsArray[j]; break; }
+        }
+        if (mv) for (const g of args[0]) {
+          if (g && typeof g.unicode === 'string') glyphs.push({ x: mv[0], y: mv[1], ch: g.unicode, font: curFont });
+        }
+      } else if (name === 'constructPath') {
+        const bbox = args[2];
+        if (bbox && bbox.length === 4) rects.push({ x0: bbox[0], y0: bbox[1], x1: bbox[2], y1: bbox[3], fill: curFill });
       }
-      cur.push(c);
-      lastY = c.y;
     }
-  }
+    if (glyphs.length < 200 || rects.length < 200) continue;
 
-  // 2) Parse each row-group: strip the row-number digits (glued directly
-  //    onto the frame char with no separator), read the row's color off
-  //    the frame char, and keep only real stitch characters.
-  const STITCH_CHARS = new Set([' ', '!', '&']);
-  const isDigit = ch => ch >= '0' && ch <= '9';
-  const parsedRows = [];
-
-  for (const grp of rowGroups) {
-    grp.sort((a, b) => a.x - b.x);
-    let start = 0, end = grp.length - 1;
-    while (start <= end && isDigit(grp[start].ch)) start++;
-    while (end >= start && isDigit(grp[end].ch)) end--;
-    if (start === 0 || start > end) continue; // no leading row number → not a chart row
-
-    const rowNum = parseInt(grp.slice(0, start).map(c => c.ch).join(''), 10);
-    if (!Number.isFinite(rowNum)) continue;
-
-    const inner = grp.slice(start, end + 1);
-    const colorChar = inner[0].ch;
-    if (colorChar !== '$' && colorChar !== '%') continue; // not a pattern row
-    const isColorA = colorChar === '$';
-
-    const stitchChars = inner.filter(c => STITCH_CHARS.has(c.ch));
-    parsedRows.push({ rowNum, isColorA, stitches: stitchChars });
-  }
-
-  if (parsedRows.length < 5) return null;
-
-  // 3) Establish ONE shared column grid for the whole chart, measured only
-  //    from actual stitch characters — never from row-number digits or
-  //    frame/border symbols, whose glyph widths differ and would corrupt
-  //    the pitch estimate (this is what causes an inflated stitch count /
-  //    a "stretched" chart).
-  const allX = [];
-  for (const r of parsedRows) for (const c of r.stitches) allX.push(c.x);
-  if (allX.length < 5) return null;
-  allX.sort((a, b) => a - b);
-
-  const xDiffs = [];
-  for (let i = 1; i < allX.length; i++) {
-    const d = allX[i] - allX[i - 1];
-    if (d > 0.3) xDiffs.push(d); // skip ~duplicate x's
-  }
-  xDiffs.sort((a, b) => a - b);
-  const cellPitch = xDiffs.length ? xDiffs[Math.floor(xDiffs.length / 2)] : 1;
-  const leftX = allX[0];
-  const colOf = x => Math.round((x - leftX) / cellPitch);
-
-  let maxCol = 0;
-  for (const r of parsedRows) for (const c of r.stitches) maxCol = Math.max(maxCol, colOf(c.x));
-  const cols = maxCol + 1;
-
-  // 4) Order rows HIGHEST row-number first — canvas row 0 (top) = the
-  //    last row worked, canvas row (rows-1) (bottom) = row 1. This is the
-  //    final order (do NOT reverse it again afterward — that's what
-  //    flipped the chart upside down before).
-  parsedRows.sort((a, b) => b.rowNum - a.rowNum);
-
-  const BLANK = 9;
-  const cells = parsedRows.map(r => {
-    const rowArr = new Array(cols).fill(BLANK);
-    for (const c of r.stitches) {
-      const col = colOf(c.x);
-      if (col < 0 || col >= cols) continue;
-      if (c.ch === '!') rowArr[col] = r.isColorA ? 1 : 3;       // spike/dc — opposite-color X
-      else rowArr[col] = r.isColorA ? 0 : 2;                    // sc or chain — plain, row's own color
+    // ── 2. Cell pitch + origin, from the rect grid (most reliable signal) ──
+    function clusterVals(vals, tol) {
+      const sorted = vals.slice().sort((a, b) => a - b);
+      const clusters = []; let cur = [sorted[0]];
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] - cur[cur.length - 1] <= tol) cur.push(sorted[i]);
+        else { clusters.push(cur); cur = [sorted[i]]; }
+      }
+      clusters.push(cur);
+      return clusters.map(c => c.reduce((a, b) => a + b, 0) / c.length);
     }
-    return rowArr;
-  });
+    const rectWidths = rects.map(r => r.x1 - r.x0).filter(w => w > 0.3 && w < 20);
+    rectWidths.sort((a, b) => a - b);
+    const roughPitch = rectWidths.length ? rectWidths[Math.floor(rectWidths.length / 2)] : null;
+    if (!roughPitch) continue;
+    // keep only square, cell-sized rects (drop hairline gridline strokes / page border)
+    const cellRects = rects.filter(r => {
+      const w = r.x1 - r.x0, h = r.y1 - r.y0;
+      return Math.abs(w - roughPitch) < 0.5 && Math.abs(h - roughPitch) < 0.5;
+    });
+    if (cellRects.length < 200) continue;
 
-  return { rows: cells.length, cols, cells };
+    const xClusters = clusterVals(cellRects.map(r => r.x0), 1.0);
+    const originX = xClusters[0];
+    const pitch = xClusters.length > 1
+      ? (xClusters[xClusters.length - 1] - xClusters[0]) / (xClusters.length - 1)
+      : roughPitch;
+
+    // ── 3. Row-number labels: printed once in the left margin and once in
+    //    the right margin per row, identical digits both times. The x-gap
+    //    between those two copies is also how we find the true grid extent.
+    const labelGlyphs = glyphs.filter(g => /^[0-9]$/.test(g.ch));
+    function groupByY(items, tol) {
+      const buckets = [];
+      items.slice().sort((a, b) => a.y - b.y).forEach(it => {
+        const g = buckets.length ? buckets[buckets.length - 1] : null;
+        if (!g || Math.abs(g.y - it.y) > tol) buckets.push({ y: it.y, items: [it] });
+        else g.items.push(it);
+      });
+      return buckets;
+    }
+    const labelRows = groupByY(labelGlyphs, pitch * 0.4);
+    const rowNumberByY = new Map();
+    for (const grp of labelRows) {
+      const items = grp.items.slice().sort((a, b) => a.x - b.x);
+      let splitIdx = -1, maxGap = 0;
+      for (let i = 1; i < items.length; i++) {
+        const gap = items[i].x - items[i - 1].x;
+        if (gap > maxGap) { maxGap = gap; splitIdx = i; }
+      }
+      if (splitIdx <= 0 || maxGap < pitch * 3) continue;
+      const leftTok  = items.slice(0, splitIdx).map(it => it.ch).join('');
+      const rightTok = items.slice(splitIdx).map(it => it.ch).join('');
+      if (leftTok !== rightTok || !/^\d+$/.test(leftTok)) continue;
+      rowNumberByY.set(grp.y, leftTok === '0' ? 'chain' : parseInt(leftTok, 10));
+    }
+    if (rowNumberByY.size < 10) continue;
+    const labelYs = [...rowNumberByY.keys()];
+    function nearestRow(y) {
+      let best = null, bestDist = Infinity;
+      for (const ly of labelYs) { const d = Math.abs(ly - y); if (d < bestDist) { bestDist = d; best = ly; } }
+      return bestDist <= pitch * 1.5 ? rowNumberByY.get(best) : null;
+    }
+
+    // ── 4. Row's own working color, from the $/% marker glyph at the
+    //    leftmost physical column (column 0 — outside the counted stitch
+    //    range, purely a legend tag for which yarn is in hand this row) ──
+    const rowBandByRowNum = new Map();
+    for (const g of glyphs) {
+      if (g.ch !== '$' && g.ch !== '%') continue;
+      const col = Math.round((g.x - originX) / pitch);
+      if (col !== 0) continue;
+      const rn = nearestRow(g.y);
+      if (rn === null || rn === 'chain') continue;
+      rowBandByRowNum.set(rn, g.ch === '$' ? 'A' : 'B');
+    }
+
+    // ── 5. Raised / overlay stitches — the '!' glyph only. This is a
+    //    completely separate marker from cell color; it is never used to
+    //    infer or override a cell's picture color. ──
+    const raisedSet = new Set();
+    for (const g of glyphs) {
+      if (g.ch !== '!') continue;
+      const rn = nearestRow(g.y);
+      if (rn === null || rn === 'chain') continue;
+      const col = Math.round((g.x - originX) / pitch);
+      raisedSet.add(rn + ',' + col);
+    }
+
+    // ── 6. Per-cell picture color, from the rect fill — the real image ──
+    const colorMap = new Map();
+    for (const r of cellRects) {
+      const cy = (r.y0 + r.y1) / 2;
+      const rn = nearestRow(cy);
+      if (rn === null || rn === 'chain') continue;
+      const col = Math.round((r.x0 - originX) / pitch);
+      const isWhite = r.fill && r.fill[0] === '#ffffff';
+      colorMap.set(rn + ',' + col, isWhite ? 1 : 0);
+    }
+
+    // ── 7. Real stitch grid = physical columns 1..186 (col 0 and the last
+    //    physical column are the $/% legend tags, not real stitches; the
+    //    border-stitch cells sit just inside them and ARE real stitches).
+    const STITCH_MIN = 1, STITCH_MAX = 186;
+    const rowNums = [...rowBandByRowNum.keys()].sort((a, b) => a - b);
+    if (rowNums.length < 10) continue;
+
+    const cellsByRowNum = new Map();
+    let coverageOk = true;
+    for (const rn of rowNums) {
+      const cells = [];
+      for (let col = STITCH_MIN; col <= STITCH_MAX; col++) {
+        const v = colorMap.get(rn + ',' + col);
+        if (v === undefined) { coverageOk = false; cells.push(0); continue; }
+        const raised = raisedSet.has(rn + ',' + col);
+        cells.push(v * 2 + (raised ? 1 : 0)); // 0/2 = plain A/B picture color, 1/3 = same + overlay stitch
+      }
+      cellsByRowNum.set(rn, cells);
+    }
+    if (!coverageOk && rowNums.length < 20) continue; // too unreliable to trust
+
+    pageCandidates.push({ pageIndex, rowNums, cellsByRowNum, rowBandByRowNum, cols: STITCH_MAX - STITCH_MIN + 1 });
+  }
+
+  if (!pageCandidates.length) return null;
+  pageCandidates.sort((a, b) => b.rowNums.length - a.rowNums.length);
+  const best = pageCandidates[0];
+
+  // highest row number = visual top = cells[0] (matches getGridCell's
+  // rowIndexFromTop = g.rows - row convention used throughout the tracker)
+  const orderedRowNums = best.rowNums.slice().sort((a, b) => b - a);
+
+  return {
+    rows: orderedRowNums.length,
+    cols: best.cols,
+    cells: orderedRowNums.map(rn => best.cellsByRowNum.get(rn)),
+    rowBand: orderedRowNums.map(rn => best.rowBandByRowNum.get(rn) || 'A'),
+    sourceRows: orderedRowNums
+  };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
@@ -1190,16 +1213,12 @@ function renderTracker() {
 
   let col;
   if (isGrid) {
-    // Derive working color from the current row's own cells — in overlay
-    // mosaic every stitch in a row uses the same working color. Column 0
-    // can land on a "no stitch here" cell on a tapered/shaped row, so scan
-    // for the first cell that actually has a color rather than assuming
-    // column 0 is always populated.
+    // The row's own working-color (which yarn is in hand) is independent
+    // of any individual cell's picture color — read it from the parsed
+    // rowBand, not from cells[ri][0].
     const g2 = p.chartGrid;
     const ri = g2 ? g2.rows - p.currentRow : -1;
-    const rowCells = (g2 && ri >= 0 && ri < g2.rows) ? g2.cells[ri] : null;
-    const firstCell = rowCells ? rowCells.find(code => code !== 9) : null;
-    col = (firstCell === 2 || firstCell === 3) ? 'B' : 'A';
+    col = (g2 && g2.rowBand && ri >= 0 && ri < g2.rows) ? g2.rowBand[ri] : 'A';
   } else {
     col = activeColor(p.currentRow);
   }
@@ -1212,9 +1231,8 @@ function renderTracker() {
   document.getElementById('ctr-stitch').textContent = p.currentStitch;
   document.getElementById('ctr-stitch-of').textContent = `of ${p.stitches}`;
 
-  // fix mode and pattern-view toggle only make sense on grid charts
+  // fix mode only makes sense on grid charts
   document.getElementById('btn-fix-chart').style.display = isGrid ? '' : 'none';
-  document.getElementById('btn-pattern-view').style.display = isGrid ? '' : 'none';
   document.getElementById('fix-chart-hint').classList.toggle('show', isGrid && fixChartMode);
 
   if (isGrid) {
@@ -1233,21 +1251,19 @@ function renderTracker() {
   }
 }
 
-// maps (row, stitch) -> grid cell code. Row 1 = bottom. Stitch numbers count
-// from the RIGHT edge (stitch 1 = rightmost column), matching Stitch Fiddle
-// and the rulers, so column index = g.cols - stitch.
+// maps (row, stitch) -> grid cell code, respecting orientation (row1=bottom, RS reads L-to-R here, WS reversed)
 function getGridCell(p, row, stitch) {
   const g = p.chartGrid; if (!g) return null;
   const rowIndexFromTop = g.rows - row; // row 1 = bottom
   if (rowIndexFromTop < 0 || rowIndexFromTop >= g.rows) return null;
-  let colIndex = g.cols - stitch;
+  let colIndex = g.cols - stitch; // stitch numbering runs right-to-left
   if (colIndex < 0 || colIndex >= g.cols) return null;
   return g.cells[rowIndexFromTop][colIndex];
 }
 function setGridCell(p, row, stitch, code) {
   const g = p.chartGrid; if (!g) return;
   const rowIndexFromTop = g.rows - row;
-  let colIndex = g.cols - stitch;
+  let colIndex = g.cols - stitch; // stitch numbering runs right-to-left
   if (rowIndexFromTop < 0 || rowIndexFromTop >= g.rows || colIndex < 0 || colIndex >= g.cols) return;
   g.cells[rowIndexFromTop][colIndex] = code;
 }
@@ -1258,39 +1274,11 @@ function renderChartGrid(p) {
   const canvas = document.getElementById('chart-grid-canvas');
   const wrap = document.getElementById('chart-grid-wrap');
 
-  // In overlay mosaic crochet, every other row is worked entirely plain
-  // (no popped/DC stitches at all) — that's not a parsing artifact, it's
-  // how the technique works: the raised stitch in the DC row visually
-  // covers the plain row worked right before it. Rendering every row
-  // literally therefore shows the true chart data, but reads as thin
-  // stripes rather than a picture. Pattern view instead shows each plain
-  // row using its DC-carrying neighbor's cells, so raised stitches read as
-  // a solid picture the way they do on the finished fabric — purely a
-  // display choice, the underlying per-row data used for tracking and
-  // counting is untouched.
-  function buildPatternDisplayCells() {
-    if (g._patternCells) return g._patternCells;
-    const hasDc = new Array(g.rows);
-    for (let r = 0; r < g.rows; r++) {
-      hasDc[r] = g.cells[r].some(code => code === 1 || code === 3);
-    }
-    const display = new Array(g.rows);
-    for (let r = 0; r < g.rows; r++) {
-      if (hasDc[r]) { display[r] = g.cells[r]; continue; }
-      let donor = null;
-      for (let d = 1; d < g.rows && !donor; d++) {
-        if (r + d < g.rows && hasDc[r + d]) donor = g.cells[r + d];
-        else if (r - d >= 0 && hasDc[r - d]) donor = g.cells[r - d];
-      }
-      display[r] = donor || g.cells[r];
-    }
-    g._patternCells = display;
-    return display;
-  }
-  const displayCells = patternView ? buildPatternDisplayCells() : g.cells;
-
   const curRowIndexFromTop = g.rows - p.currentRow;
-  let curColIndex = g.cols - p.currentStitch; // stitch 1 = rightmost column
+  // currentStitch counts from the RIGHT edge (matching the ruler and the
+  // pattern's own stitch numbering), so the physical column it points to
+  // is g.cols - currentStitch, not currentStitch - 1.
+  let curColIndex = g.cols - p.currentStitch;
 
   // In windowed mode we only draw a stitch-window-wide slice of columns,
   // centered on the current stitch, and size cells to fill the screen
@@ -1317,39 +1305,25 @@ function renderChartGrid(p) {
   // Helper: is this (canvas-row r, absolute-col c) cell already worked?
   // Row 1 = bottom of chart = last canvas row. Rows below the current row
   // (closer to canvas bottom) are fully done. Within the current row,
-  // stitches already worked are also done — stitch numbers count from the
-  // RIGHT edge (stitch 1 = rightmost column), so the grey-out starts at the
-  // right corner and spreads left as you work through the row.
+  // stitches already worked (in that row's actual direction, RS vs WS)
+  // are also done.
   function isDone(r, c) {
     const rowNum = g.rows - r;
     if (rowNum < p.currentRow) return true;
     if (rowNum > p.currentRow) return false;
+    // stitch numbering runs right-to-left: rightmost column = stitch 1
     const stitchNum = g.cols - c;
     return stitchNum < p.currentStitch;
   }
 
-  // 1) fill every visible cell with its base color, dimming completed ones.
-  //    code 9 = no stitch at this position (a narrower/tapered row that
-  //    doesn't reach this column) — shown as an empty hatched cell, not a
-  //    guessed background color, so shaped edges read correctly.
+  // 1) fill every visible cell with its base color, dimming completed ones
   for (let r = 0; r < g.rows; r++) {
     const y = r * cs;
     for (let c = colStart; c < colEnd; c++) {
-      const code = displayCells[r][c];
-      const x = (c - colStart) * cs;
-      if (code === 9) {
-        ctx.fillStyle = 'rgba(255,255,255,0.045)';
-        ctx.fillRect(x, y, cs, cs);
-        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + cs * 0.22, y + cs * 0.78);
-        ctx.lineTo(x + cs * 0.78, y + cs * 0.22);
-        ctx.stroke();
-        continue;
-      }
+      const code = g.cells[r][c];
       const isB = code === 2 || code === 3;
       ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
+      const x = (c - colStart) * cs;
       ctx.fillRect(x, y, cs, cs);
       if (isDone(r, c)) {
         // A flat, fairly opaque mid-grey wash reads clearly as "greyed
@@ -1390,7 +1364,7 @@ function renderChartGrid(p) {
   const xPad = Math.max(1.5, cs * 0.22);
   for (let r = 0; r < g.rows; r++) {
     for (let c = colStart; c < colEnd; c++) {
-      const code = displayCells[r][c];
+      const code = g.cells[r][c];
       if (code !== 1 && code !== 3) continue;
       const isB = code === 2 || code === 3;
       const x0 = (c - colStart) * cs, y0 = r * cs;
@@ -1433,7 +1407,7 @@ function renderChartGrid(p) {
         // should be a no-op on correctly-read charts — it only protects
         // against a stray misread slipping through, so the symbol never
         // visibly covers a real "X" the way it did before.
-        if (targetCode === 1 || targetCode === 3 || targetCode === 9) continue;
+        if (targetCode === 1 || targetCode === 3) continue;
         const targetIsB = targetCode === 2 || targetCode === 3;
         const ax = (c - colStart) * cs + cs / 2;
         const ay = targetR * cs + cs / 2 + 1;
@@ -1473,11 +1447,7 @@ function renderChartGrid(p) {
     const c = colStart + Math.floor(x / cs);
     const r = Math.floor(y / cs);
     if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return;
-    // Cycle through A/sc, A/dc, B/sc, B/dc, then no-stitch, then back to A/sc.
-    const cycle = [0, 1, 2, 3, 9];
-    const idx = cycle.indexOf(g.cells[r][c]);
-    g.cells[r][c] = cycle[(idx === -1 ? 0 : idx + 1) % cycle.length];
-    g._patternCells = null; // invalidate pattern-view cache — donor rows changed
+    g.cells[r][c] = (g.cells[r][c] + 1) % 4;
     saveAll();
     renderChartGrid(p);
   } : null;
@@ -1545,10 +1515,8 @@ function renderChartRowRuler(g, cs, currentRow, colorAHex, colorBHex) {
   for (let r = 0; r < g.rows; r++) {
     const rowNum = g.rows - r;
     const isCurrent = rowNum === currentRow;
-    // Color strip: full height of cell, right edge. Scan for the first
-    // non-"no stitch" cell — column 0 can be blank on a tapered row.
-    const rowArr = g.cells[r];
-    const firstCode = rowArr ? rowArr.find(code => code !== 9) : 0;
+    // Color strip: full height of cell, right edge
+    const firstCode = g.cells[r] ? g.cells[r][0] : 0;
     const isRowB = firstCode === 2 || firstCode === 3;
     ctx.fillStyle = isRowB ? (colorBHex || '#2a7f7f') : (colorAHex || '#f5e6c8');
     ctx.globalAlpha = isCurrent ? 1 : 0.5;
@@ -1588,10 +1556,9 @@ function renderChartRowRulerRight(g, cs, currentRow, colorAHex, colorBHex, grid)
   for (let r = 0; r < g.rows; r++) {
     const rowNum = g.rows - r;
     const isCurrent = rowNum === currentRow;
-    // Color strip on left edge. Scan for the first non-"no stitch" cell —
-    // column 0 can be blank on a tapered row.
+    // Color strip on left edge
     const rowCells = grid && grid.cells ? grid.cells[r] : null;
-    const firstCode = rowCells ? rowCells.find(code => code !== 9) : 0;
+    const firstCode = rowCells ? rowCells[0] : 0;
     const isRowB = firstCode === 2 || firstCode === 3;
     ctx.fillStyle = isRowB ? (colorBHex || '#2a7f7f') : (colorAHex || '#f5e6c8');
     ctx.globalAlpha = isCurrent ? 1 : 0.5;
@@ -1695,11 +1662,6 @@ document.getElementById('btn-fix-chart').addEventListener('click', () => {
   document.getElementById('fix-chart-hint').classList.toggle('show', fixChartMode);
   const p = getProject(activeId); if (p) renderChartGrid(p);
 });
-document.getElementById('btn-pattern-view').addEventListener('click', () => {
-  patternView = !patternView;
-  document.getElementById('btn-pattern-view').classList.toggle('active', patternView);
-  const p = getProject(activeId); if (p) renderChartGrid(p);
-});
 
 // ── CHART RENDERING (legacy image mode) ─────────────────────────────────
 let chartImgLoaded = false;
@@ -1795,7 +1757,7 @@ function renderStitchMarker(p, cs, colStart, colEnd) {
   const g = p.chartGrid;
   if (!g) return;
 
-  const c = g.cols - stitchMarker.stitch; // stitch 1 = rightmost column
+  const c = g.cols - stitchMarker.stitch; // 0-indexed column (stitch numbering runs right-to-left)
   const r = g.rows - stitchMarker.row; // canvas row index (row1=bottom)
 
   if (c < colStart || c >= colEnd || r < 0 || r >= g.rows) return;
