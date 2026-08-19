@@ -995,179 +995,158 @@ async function startPdfTextImport(file) {
 }
 
 function parseStitchFiddlePdfItems(pageItems) {
-  const pageCandidates = [];
+  // Each element of pageItems is the array of raw pdf.js text items for one
+  // page. We process all pages and merge the results so multi-page charts
+  // work correctly.
+  //
+  // Every Stitch Fiddle chart cell is a SINGLE CHARACTER at a FIXED X,Y
+  // coordinate. The characters are:
+  //   $ or % = color-marker / border (one at each end of a row)
+  //   " or # = inner border (immediately inside the color markers)
+  //   !       = DC stitch (the X mark)
+  //   space   = SC stitch (background)
+  //
+  // We derive the cell pitch from the VERTICAL row spacing (which is immune
+  // to font-advance-width variation) and use each item's own X coordinate
+  // to place it in the correct column.
 
-  for (let pageIndex = 0; pageIndex < pageItems.length; pageIndex++) {
-    const raw = pageItems[pageIndex] || [];
-    if (raw.length < 10) continue;
-
-    const items = raw.map(it => ({
-      x:     +((it.transform && it.transform[4]) || 0),
-      y:     +((it.transform && it.transform[5]) || 0),
-      width: +(it.width || 0),
-      str:   String(it.str || '')
-    })).filter(it => it.str.trim().length > 0);
-
-    if (items.length < 20) continue;
-
-    // ── 1. Group all items by Y baseline (±1.5 unit tolerance) ─────────────
-    items.sort((a, b) => a.y - b.y || a.x - b.x);
-    const yGroups = [];
-    for (const it of items) {
-      const last = yGroups.length ? yGroups[yGroups.length - 1] : null;
-      if (!last || Math.abs(last.y - it.y) > 1.5) {
-        yGroups.push({ y: it.y, items: [it] });
-      } else {
-        last.items.push(it);
-      }
+  // ── 1. Flatten all items across all pages, tagging each with a global Y
+  //      (page N items are offset by N×10000 so they sort after page N-1).
+  const allItems = [];
+  for (let pi = 0; pi < pageItems.length; pi++) {
+    const raw = pageItems[pi] || [];
+    for (const it of raw) {
+      if (!it.str || !it.transform) continue;
+      const x   = it.transform[4];
+      const pdfY = it.transform[5]; // PDF Y: 0 = page bottom
+      // We will sort by globalY ascending = top of document first.
+      // "top" in PDF coordinates = largest pdfY within a page, so we negate.
+      const globalY = pi * 100000 - pdfY;
+      allItems.push({ x, globalY, str: it.str });
     }
+  }
+  if (allItems.length < 50) return null;
 
-    // ── 2. Find chart row groups ────────────────────────────────────────────
-    // Each chart row has a $ or % as its leftmost significant item, sitting
-    // in the left ~45 % of the page.  The regex is intentionally single-char
-    // so it matches whether the PDF emits "$\"" as one combined item or as
-    // two separate items "$" and "\"".
-    const pageMaxX = Math.max(...items.map(it => it.x + (it.width || 0)));
-    const leftEdge = pageMaxX * 0.45;
-
-    const chartGroups = [];
-    for (const g of yGroups) {
-      const colorItem = g.items.find(it =>
-        (it.str[0] === '$' || it.str[0] === '%') && it.x < leftEdge
-      );
-      if (!colorItem) continue;
-      chartGroups.push({ y: g.y, colorItem, items: g.items });
+  // ── 2. Group items by Y (±0.8 pt tolerance = same text baseline)
+  allItems.sort((a, b) => a.globalY - b.globalY || a.x - b.x);
+  const yGroups = [];
+  for (const it of allItems) {
+    const last = yGroups.length ? yGroups[yGroups.length - 1] : null;
+    if (!last || Math.abs(it.globalY - last.y) > 0.8) {
+      yGroups.push({ y: it.globalY, items: [it] });
+    } else {
+      last.items.push(it);
     }
-
-    if (chartGroups.length < 10) continue;
-
-    // ── 3. leftX — median X of color markers, and vertical row pitch ────────
-    const leftXArr = chartGroups.map(g => g.colorItem.x).sort((a, b) => a - b);
-    const leftX    = leftXArr[Math.floor(leftXArr.length / 2)];
-
-    const yArr  = chartGroups.map(g => g.y).sort((a, b) => a - b);
-    const yGaps = [];
-    for (let i = 1; i < yArr.length; i++) {
-      const d = yArr[i] - yArr[i - 1];
-      if (d > 0.3 && d < 20) yGaps.push(d);
-    }
-    yGaps.sort((a, b) => a - b);
-    const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
-    if (!rowPitch || !Number.isFinite(rowPitch) || rowPitch <= 0) continue;
-
-    // ── 4. Each row's own right-marker X position ───────────────────────────
-    // Used both to pin down cols and, more importantly, to calibrate each
-    // row's own horizontal pitch individually below.
-    function findRightMarkerX(g) {
-      for (let i = g.items.length - 1; i >= 0; i--) {
-        const s    = g.items[i].str;
-        const last = s[s.length - 1];
-        if ((last === '$' || last === '%') && g.items[i].x > g.colorItem.x + rowPitch * 10) {
-          return g.items[i].x;
-        }
-      }
-      return null;
-    }
-
-    // ── 5. Column count ───────────────────────────────────────────────────
-    // A glyph's own reported pixel width is its font advance width, which is
-    // NOT reliably the same as the fixed cell spacing the chart is laid out
-    // on ('!' and '$' are just different-shaped characters, even on a
-    // uniform grid) — that unreliable signal is what previously produced a
-    // stretched, drifting chart. The vertical spacing between rows doesn't
-    // have that problem at all (it has nothing to do with character glyphs),
-    // and Stitch Fiddle charts use square cells, so it's a much more
-    // trustworthy stand-in for the horizontal cell width. For every row,
-    // cols = round((rightMarkerX − leftMarkerX) / rowPitch) − 1; take
-    // whichever value the most rows agree on.
-    const colsVotes = new Map();
-    for (const g of chartGroups) {
-      const rightX = findRightMarkerX(g);
-      if (rightX === null) continue;
-      const est = Math.round((rightX - g.colorItem.x) / rowPitch) - 1;
-      if (est >= 10 && est <= 400) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
-    }
-    let cols = 186, bestVotes = 0; // 186 only used if voting fails entirely
-    for (const [est, votes] of colsVotes) {
-      if (votes > bestVotes) { bestVotes = votes; cols = est; }
-    }
-
-    // ── 6. Parse each row into a cells array ──────────────────────────────
-    // Each row's marks are placed using THAT row's own pitch, calibrated by
-    // interpolating between its own left and right markers (known to sit at
-    // physPos 0 and physPos cols+1). This is what keeps the picture crisp
-    // instead of drifting/stretching toward the right edge: a single global
-    // pitch, applied the same way to every row, lets any tiny per-row error
-    // compound across up to `cols` columns; per-row calibration can't drift
-    // because it's anchored at both ends of that specific row.
-    const candidates = [];
-    for (const g of chartGroups) {
-      const colorChar  = g.colorItem.str[0]; // '$' or '%'
-      const foundation = g.colorItem.str.startsWith('$&') ||
-        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + rowPitch * 3);
-
-      // Row number label: the digit-only item closest to leftX on its left
-      const labelItem = g.items
-        .filter(it => /^\d+$/.test(it.str.trim()) &&
-          it.x < leftX - rowPitch * 0.3 &&
-          it.x > leftX - rowPitch * 25)
-        .sort((a, b) => b.x - a.x)[0];
-      const sourceRow = labelItem ? parseInt(labelItem.str.trim(), 10) : null;
-
-      const rightX = findRightMarkerX(g);
-      const localPitch = rightX !== null ? (rightX - g.colorItem.x) / (cols + 1) : rowPitch;
-
-      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
-
-      for (const it of g.items) {
-        if (!it.str.includes('!')) continue;
-        if (it.x < leftX - localPitch * 1.5 || it.x > leftX + (cols + 3) * localPitch) continue;
-        const startPhysical = Math.round((it.x - g.colorItem.x) / localPitch);
-        for (let i = 0; i < it.str.length; i++) {
-          if (it.str[i] !== '!') continue;
-          // physPos 0 = $ color marker → col −1 (skipped)
-          // physPos 1 = first stitch   → col 0
-          const col = startPhysical + i - 1;
-          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
-        }
-      }
-
-      candidates.push({ y: g.y, sourceRow, cells, colorChar, foundation });
-    }
-
-    if (candidates.length < 10) continue;
-
-    const uniqueNumbered = new Map();
-    for (const r of candidates) {
-      if (r.sourceRow !== null) uniqueNumbered.set(r.sourceRow, r);
-    }
-
-    pageCandidates.push({ pageIndex, candidates, uniqueNumbered, cols });
   }
 
-  if (!pageCandidates.length) return null;
+  // ── 3. Identify chart rows: a Y-group whose leftmost item is $ or %
+  //      and sits in the left 40% of the page.
+  const pageWidths = pageItems.map(raw => {
+    const xs = (raw || []).filter(it => it.transform).map(it => it.transform[4] + (it.width || 0));
+    return xs.length ? Math.max(...xs) : 600;
+  });
+  const pageWidth = pageWidths.length ? Math.max(...pageWidths) : 600;
+  const leftThreshold = pageWidth * 0.40;
 
-  // Best page: most candidate rows
-  pageCandidates.sort((a, b) => b.candidates.length - a.candidates.length);
-  const best = pageCandidates[0];
-
-  let finalRows;
-  if (best.uniqueNumbered.size >= 10) {
-    // Sort descending by sourceRow: highest number = visual top = cells[0]
-    finalRows = Array.from(best.uniqueNumbered.values())
-      .sort((a, b) => b.sourceRow - a.sourceRow);
-  } else {
-    // Fallback: PDF Y increases upward, so higher Y = visual top (highest row)
-    finalRows = best.candidates.slice().sort((a, b) => b.y - a.y);
+  const chartRows = [];
+  for (const g of yGroups) {
+    // Leftmost item with a color marker
+    const colorItem = g.items
+      .filter(it => (it.str === '$' || it.str === '%') && it.x < leftThreshold)
+      .sort((a, b) => a.x - b.x)[0];
+    if (!colorItem) continue;
+    chartRows.push({ y: g.y, colorChar: colorItem.str, leftX: colorItem.x, items: g.items });
   }
 
-  if (finalRows.length < 10) return null;
+  if (chartRows.length < 10) return null;
+
+  // ── 4. Derive cell pitch from VERTICAL row spacing
+  //      (horizontal glyph widths differ per character — vertical pitch is uniform)
+  const yVals = chartRows.map(r => r.y).sort((a, b) => a - b);
+  const yGaps = [];
+  for (let i = 1; i < yVals.length; i++) {
+    const d = yVals[i] - yVals[i - 1];
+    if (d > 0.5 && d < 15) yGaps.push(d);
+  }
+  if (!yGaps.length) return null;
+  yGaps.sort((a, b) => a - b);
+  const pitch = yGaps[Math.floor(yGaps.length / 2)]; // median gap = cell size
+
+  // ── 5. Find the consistent left X of the color markers (median)
+  const leftXArr = chartRows.map(r => r.leftX).sort((a, b) => a - b);
+  const markerX  = leftXArr[Math.floor(leftXArr.length / 2)];
+
+  // First stitch X = markerX + 2*pitch (skip color marker + border char)
+  const firstStitchX = markerX + 2 * pitch;
+
+  // ── 6. Determine column count
+  //      Find the rightmost border/color marker for each row, then compute
+  //      cols = round((rightBorderX − firstStitchX) / pitch) + 1
+  //      Take the mode across all rows.
+  function findRightBorderX(row) {
+    // Look for $ or % items far to the right
+    const rightMarkers = row.items
+      .filter(it => (it.str === '$' || it.str === '%') && it.x > markerX + pitch * 20)
+      .sort((a, b) => b.x - a.x);
+    if (rightMarkers.length) return rightMarkers[0].x;
+    // Fallback: rightmost # or " item
+    const rightBorders = row.items
+      .filter(it => (it.str === '#' || it.str === '"') && it.x > markerX + pitch * 10)
+      .sort((a, b) => b.x - a.x);
+    return rightBorders.length ? rightBorders[0].x : null;
+  }
+
+  const colsVotes = new Map();
+  for (const row of chartRows) {
+    const rightX = findRightBorderX(row);
+    if (rightX === null) continue;
+    // Last stitch is one pitch before the right border char,
+    // which is itself one pitch before the right color marker.
+    const lastStitchX = rightX - pitch;
+    const est = Math.round((lastStitchX - firstStitchX) / pitch) + 1;
+    if (est >= 10 && est <= 500) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
+  }
+  if (!colsVotes.size) return null;
+
+  let cols = 0, bestVotes = 0;
+  for (const [est, votes] of colsVotes) {
+    if (votes > bestVotes) { bestVotes = votes; cols = est; }
+  }
+  if (cols < 10) return null;
+
+  // ── 7. Parse each chart row into a cells array using per-item X position
+  const parsedRows = [];
+  for (const row of chartRows) {
+    // Skip foundation chain rows
+    if (row.items.some(it => it.str === '&')) continue;
+
+    const isColorA = row.colorChar === '$';
+    // Fill with SC (background color for this row)
+    const cells = new Array(cols).fill(isColorA ? 0 : 2);
+
+    for (const it of row.items) {
+      if (it.str !== '!') continue;
+      // Map this item's X to a 0-based column index
+      const colIdx = Math.round((it.x - firstStitchX) / pitch);
+      if (colIdx >= 0 && colIdx < cols) {
+        cells[colIdx] = isColorA ? 1 : 3; // DC in row's color
+      }
+    }
+
+    parsedRows.push({ y: row.y, colorChar: row.colorChar, cells });
+  }
+
+  if (parsedRows.length < 5) return null;
+
+  // ── 8. Sort by Y ascending = top-of-document first = highest row number
+  //      first. Then reverse so parsedRows[0] = row 1 (bottom, worked first).
+  parsedRows.sort((a, b) => a.y - b.y);
+  parsedRows.reverse();
 
   return {
-    rows:       finalRows.length,
-    cols:       best.cols,
-    cells:      finalRows.map(r => r.cells),
-    sourceRows: finalRows.map(r => r.sourceRow)
+    rows:  parsedRows.length,
+    cols,
+    cells: parsedRows.map(r => r.cells)
   };
 }
 
