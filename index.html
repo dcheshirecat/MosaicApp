@@ -22,7 +22,8 @@
   body { background: var(--surface); color: var(--text); font-family: 'Georgia', serif; min-height: 100vh; overflow-x: hidden; padding-bottom: env(safe-area-inset-bottom, 0px); }
 
   /* ── NAV ── */
-  #nav { display: flex; align-items: center; justify-content: space-between; padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
+  :root { --status-bar: env(safe-area-inset-top, 0px); }
+  #nav { display: flex; align-items: center; justify-content: space-between; padding: calc(var(--status-bar) + 14px) 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
   #nav h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; }
   #nav-back { display: none; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
   #btn-settings { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 4px 8px; width: 40px; }
@@ -281,6 +282,42 @@
   .home-nav-card-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
   .home-nav-card-arrow { font-size: 1.3rem; color: var(--muted); flex-shrink: 0; }
 </style>
+<script>
+// Detect real status bar height on Android WebView.
+// env(safe-area-inset-top) often returns 0 in WebViews even when
+// the content draws under the status bar. We use a sentinel element
+// positioned at y=0 and measure how far down it actually renders.
+(function() {
+  function applyStatusBar(px) {
+    document.documentElement.style.setProperty('--status-bar', px + 'px');
+  }
+  // Method 1: Android bridge (set from Java if available)
+  if (window.NativeBridge && typeof window.NativeBridge.getStatusBarHeight === 'function') {
+    applyStatusBar(window.NativeBridge.getStatusBarHeight());
+    return;
+  }
+  // Method 2: visualViewport offset (works on many Android versions)
+  if (window.visualViewport) {
+    var offset = window.visualViewport.offsetTop;
+    if (offset > 0) { applyStatusBar(offset); return; }
+  }
+  // Method 3: measure a sentinel div placed at top:0
+  var el = document.createElement('div');
+  el.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;opacity:0;';
+  document.documentElement.appendChild(el);
+  function measure() {
+    var rect = el.getBoundingClientRect();
+    if (rect.top < 0) { applyStatusBar(Math.round(-rect.top)); }
+    else if (window.screen && window.screen.availTop > 0) {
+      applyStatusBar(window.screen.availTop);
+    }
+    document.documentElement.removeChild(el);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', measure);
+  } else { measure(); }
+})();
+</script>
 </head>
 <body>
 
@@ -313,6 +350,14 @@
     <span class="home-nav-card-arrow">→</span>
   </button>
   <input type="file" id="photo-design-file" accept="image/*" style="display:none">
+  <div style="margin-top:8px;padding:0 4px;">
+    <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Import Shared Chart</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="text" id="redeem-input" maxlength="6" placeholder="ABC123" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="flex:1;font-family:monospace;letter-spacing:0.1em;text-transform:uppercase;font-size:1.1rem;">
+      <button id="btn-redeem" style="padding:11px 16px;background:var(--accent2);color:#fff;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer;white-space:nowrap;font-family:inherit;">Import</button>
+    </div>
+    <div id="redeem-status" style="font-size:0.8rem;color:var(--muted);margin-top:6px;min-height:1.2em;"></div>
+  </div>
 </div>
 
 <div id="screen-project" class="screen">
@@ -336,6 +381,20 @@
     </span>
     <span class="home-nav-card-arrow">→</span>
   </button>
+  <div id="share-code-panel">
+    <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Share Chart</div>
+    <input type="text" id="share-name-input" maxlength="40" placeholder="Name this chart (optional)" autocomplete="off" style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.9rem;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;">
+    <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--muted);margin-bottom:12px;cursor:pointer;">
+      <input type="checkbox" id="share-include-media" style="width:16px;height:16px;flex-shrink:0;">
+      <span>Include my progress photos/videos with this share</span>
+    </label>
+    <div id="share-code-display" style="font-size:2rem;font-weight:bold;letter-spacing:0.18em;text-align:center;color:var(--accent);font-family:monospace;padding:10px 0 4px;">——————</div>
+    <div id="share-code-hint" style="font-size:0.78rem;color:var(--muted);text-align:center;margin-bottom:10px;">Generate a 6-character code anyone can use to import this chart</div>
+    <div style="display:flex;gap:8px;">
+      <button id="btn-share-generate" style="flex:1;padding:10px;border-radius:8px;border:none;font-size:0.88rem;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff;">Generate Code</button>
+      <button id="btn-share-copy" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);font-size:0.88rem;cursor:pointer;font-family:inherit;background:var(--card);color:var(--text);display:none;">Copy Code</button>
+    </div>
+  </div>
 </div>
 
 <div id="screen-media" class="screen">
@@ -853,6 +912,7 @@ function openProjectScreen(id) {
   document.getElementById('project-media-desc').textContent = count
     ? `${count} item${count === 1 ? '' : 's'} attached — add more or review them.`
     : 'Add progress photos or videos to this project.';
+  refreshSharePanel(p);
   showScreen('project');
 }
 document.getElementById('btn-project-chart').addEventListener('click', () => openTracker(activeId));
@@ -3002,6 +3062,210 @@ function syncWindowViewUI() {
   document.getElementById('btn-window-view').classList.toggle('active', settings.windowedView);
 }
 
+// ── CHART SHARE CODES ────────────────────────────────────────────────────
+// A 6-character alphanumeric code encodes the chart grid (rows, cols, cells)
+// as a compact base-64 blob stored in SharedPreferences under the key
+// "share_<CODE>". The receiver redeems the code to import the chart into
+// their own project. Codes persist indefinitely.
+//
+// Encoding: JSON → UTF-8 → base-64 (URL-safe).
+// The code itself is 6 random uppercase letters/digits (36^6 ≈ 2B combos).
+
+const SHARE_PREFIX = 'mct_share_';
+
+function makeShareCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I,O,0,1 to avoid confusion
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function encodeChart(g) {
+  // Encode a chartGrid object to a compact string.
+  // cells is a 2D array of small integers (0-3).
+  // We pack each cell as 2 bits → 4 cells per byte → base-64.
+  const { rows, cols, cells } = g;
+  const bits = rows * cols;
+  const byteCount = Math.ceil(bits * 2 / 8);
+  const bytes = new Uint8Array(byteCount);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const val = (cells[r] && cells[r][c] != null) ? cells[r][c] : 0;
+      const byteIdx = Math.floor(idx * 2 / 8);
+      const bitOff  = (idx * 2) % 8;
+      bytes[byteIdx] |= (val & 3) << bitOff;
+    }
+  }
+  // Header: rows (2 bytes), cols (2 bytes), then data
+  const header = new Uint8Array(4);
+  header[0] = (rows >> 8) & 0xff;
+  header[1] = rows & 0xff;
+  header[2] = (cols >> 8) & 0xff;
+  header[3] = cols & 0xff;
+  const combined = new Uint8Array(4 + byteCount);
+  combined.set(header); combined.set(bytes, 4);
+  // base-64 encode
+  let bin = '';
+  combined.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function decodeChart(str) {
+  try {
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const rows = (bytes[0] << 8) | bytes[1];
+    const cols = (bytes[2] << 8) | bytes[3];
+    if (rows < 1 || rows > 2000 || cols < 1 || cols > 2000) return null;
+    const data = bytes.slice(4);
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      const row = [];
+      for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
+        const byteIdx = Math.floor(idx * 2 / 8);
+        const bitOff  = (idx * 2) % 8;
+        row.push((data[byteIdx] >> bitOff) & 3);
+      }
+      cells.push(row);
+    }
+    return { rows, cols, cells };
+  } catch(e) { return null; }
+}
+
+// Generate a share code for the current project's chart
+document.getElementById('btn-share-generate').addEventListener('click', async () => {
+  const p = getProject(activeId);
+  if (!p || !p.chartGrid) { toast('This project has no imported chart to share'); return; }
+
+  const shareName    = document.getElementById('share-name-input').value.trim();
+  const includeMedia = document.getElementById('share-include-media').checked;
+
+  const payload = { chart: encodeChart(p.chartGrid) };
+  if (shareName) payload.name = shareName;
+  if (includeMedia && (p.media || []).length) payload.media = p.media;
+
+  const code = makeShareCode();
+  let json = JSON.stringify(payload);
+
+  try {
+    await store.set(SHARE_PREFIX + code, json);
+  } catch (err) {
+    if (includeMedia) {
+      // Media likely pushed the payload past the storage size limit — retry
+      // without it rather than silently failing the whole share.
+      delete payload.media;
+      json = JSON.stringify(payload);
+      try {
+        await store.set(SHARE_PREFIX + code, json);
+        toast('Photos/videos were too large to include — shared the chart only');
+      } catch (err2) {
+        toast('Could not generate share code — try again');
+        return;
+      }
+    } else {
+      toast('Could not generate share code — try again');
+      return;
+    }
+  }
+
+  document.getElementById('share-code-display').textContent = code;
+  document.getElementById('share-code-hint').textContent = 'Share this code — it lets anyone import this chart';
+  document.getElementById('btn-share-copy').style.display = '';
+  // Store latest code on project for easy retrieval
+  p._shareCode = code;
+  saveAll();
+  toast('Code generated: ' + code);
+});
+
+document.getElementById('btn-share-copy').addEventListener('click', () => {
+  const code = document.getElementById('share-code-display').textContent.trim();
+  if (!code || code === '——————') return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(code).then(() => toast('Code copied!')).catch(() => {
+      toast('Code: ' + code);
+    });
+  } else { toast('Code: ' + code); }
+});
+
+// Redeem a share code
+document.getElementById('btn-redeem').addEventListener('click', async () => {
+  const raw = document.getElementById('redeem-input').value.trim().toUpperCase();
+  const status = document.getElementById('redeem-status');
+  if (raw.length !== 6) { status.textContent = 'Enter a 6-character code.'; return; }
+  status.textContent = 'Looking up code…';
+  const stored = await store.get(SHARE_PREFIX + raw);
+  if (!stored) {
+    status.textContent = 'Code not found. Check spelling or ask the sender to regenerate.';
+    return;
+  }
+
+  // Older share codes stored the encoded chart string directly (no name/
+  // media envelope) — support both so existing codes still redeem.
+  let payload;
+  try {
+    payload = JSON.parse(stored);
+    if (!payload || typeof payload.chart !== 'string') throw new Error('not an envelope');
+  } catch (e) {
+    payload = { chart: stored };
+  }
+
+  const grid = decodeChart(payload.chart);
+  if (!grid) { status.textContent = 'Code data is corrupted. Ask the sender to regenerate.'; return; }
+  // Create a new project with this chart
+  const p = {
+    id: uid(),
+    name: payload.name || ('Shared Chart (' + raw + ')'),
+    colorAName: 'Color A', colorAHex: '#f5e6c8',
+    colorBName: 'Color B', colorBHex: '#2a7f7f',
+    adcSymbol: '⚓', reversible: false,
+    totalRows: grid.rows, stitches: grid.cols,
+    chartGrid: grid, chartSource: 'grid', chartImage: null,
+    currentRow: 1, currentStitch: 1,
+    media: Array.isArray(payload.media) ? payload.media : []
+  };
+  projects.push(p);
+  await saveAll();
+  renderList();
+  document.getElementById('redeem-input').value = '';
+  status.textContent = '';
+  status.style.color = 'var(--success)';
+  status.textContent = '✓ Chart imported' + (payload.media && payload.media.length ? ' with progress media' : '') + '! Find it in My Projects.';
+  setTimeout(() => { status.textContent = ''; status.style.color = ''; }, 4000);
+  toast('Chart imported successfully!');
+});
+
+// Refresh the share panel when opening the project screen
+const _origOpenProject = typeof openProject === 'function' ? openProject : null;
+function refreshSharePanel(p) {
+  const display = document.getElementById('share-code-display');
+  const copyBtn = document.getElementById('btn-share-copy');
+  const hint    = document.getElementById('share-code-hint');
+  const nameInput = document.getElementById('share-name-input');
+  const mediaCheck = document.getElementById('share-include-media');
+  if (nameInput)  nameInput.value = '';
+  if (mediaCheck) mediaCheck.checked = false;
+  if (!p || !p.chartGrid) {
+    display.textContent = '——————';
+    hint.textContent = 'Import a chart first, then generate a share code';
+    copyBtn.style.display = 'none';
+  } else if (p._shareCode) {
+    display.textContent = p._shareCode;
+    hint.textContent = 'Share this code — it lets anyone import this chart';
+    copyBtn.style.display = '';
+  } else {
+    display.textContent = '——————';
+    hint.textContent = 'Generate a 6-character code anyone can use to import this chart';
+    copyBtn.style.display = 'none';
+  }
+}
+
+// Hook into existing openProject to refresh the share panel
+const _origOpenProjectFn = window.openProject;
+
 // ── INIT ─────────────────────────────────────────────────────────────────
 (async () => {
   await loadAll();
@@ -3016,16 +3280,19 @@ function syncWindowViewUI() {
 // pagehide when the WebView is being destroyed.  Both use synchronous
 // localStorage so the write completes before the process is suspended.
 function saveAllSync() {
-  try {
-    const raw = JSON.stringify(projects);
-    if (window.AndroidStorage) { window.AndroidStorage.set('mc_projects', raw); }
-    else { localStorage.setItem('mc_projects', raw); }
-  } catch(e) {}
-  try {
-    const raw = JSON.stringify(settings);
-    if (window.AndroidStorage) { window.AndroidStorage.set('mc_settings', raw); }
-    else { localStorage.setItem('mc_settings', raw); }
-  } catch(e) {}
+  // Synchronous save for app-backgrounded / destroyed events.
+  // Uses window.storage (the Java StorageBridge), falling back to localStorage.
+  function syncSet(key, value) {
+    try {
+      if (window.storage && typeof window.storage.set === 'function') {
+        window.storage.set(key, value); // synchronous Java bridge
+      } else {
+        localStorage.setItem(key, value);
+      }
+    } catch(e) { try { localStorage.setItem(key, value); } catch(e2) {} }
+  }
+  syncSet('mc_projects', JSON.stringify(projects));
+  syncSet('mc_settings', JSON.stringify(settings));
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveAllSync();
