@@ -371,6 +371,20 @@ jobs:
           fi
           echo "${{ secrets.MOSAIC_KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/mosaic-tracker-release.jks
 
+      - name: Verify keystore password and alias
+        env:
+          MOSAIC_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_KEYSTORE_PASSWORD }}
+          MOSAIC_KEY_ALIAS: ${{ secrets.MOSAIC_KEY_ALIAS }}
+        run: |
+          if ! keytool -list \
+                -keystore ${{ github.workspace }}/mosaic-tracker-release.jks \
+                -storepass "$MOSAIC_KEYSTORE_PASSWORD" \
+                -alias "$MOSAIC_KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::Could not open the keystore with the MOSAIC_KEYSTORE_PASSWORD / MOSAIC_KEY_ALIAS secrets currently set. Either the password secret doesn't match this keystore file, the alias is wrong, or MOSAIC_KEYSTORE_BASE64 decoded to a different/corrupted file. Re-check all three secrets against KEYSTORE_SETUP.md."
+            exit 1
+          fi
+          echo "Keystore opened successfully with the configured password and alias."
+
       - name: Build signed release APK and AAB
         env:
           MOSAIC_KEYSTORE_PATH: ${{ github.workspace }}/mosaic-tracker-release.jks
