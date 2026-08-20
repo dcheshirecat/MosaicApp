@@ -141,6 +141,8 @@
   .symbol-choice { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; }
   .symbol-choice.selected { border-color: var(--accent); background: var(--row-hi); }
   #f-adc-symbol { width: 60px; flex-shrink: 0; text-align: center; font-size: 1.2rem; }
+  #emoji-open-btn { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0; }
+  #emoji-open-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; }
   /* emoji picker popup */
   #emoji-picker-pop { display: none; position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 300; background: var(--surface); border: 1px solid var(--border); border-radius: 16px 16px 0 0; padding: 12px 14px 20px; width: min(380px, 100vw); box-shadow: 0 -4px 24px rgba(0,0,0,0.5); max-height: 70vh; display: none; flex-direction: column; }
   #emoji-picker-pop.open { display: flex; }
@@ -157,7 +159,6 @@
   #emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; overflow-y: auto; flex: 1; padding: 2px; }
   .emoji-btn { width: 100%; aspect-ratio: 1; border-radius: 8px; background: var(--card); border: 1px solid transparent; font-size: 1.4rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color 0.1s; }
   .emoji-btn:active, .emoji-btn.selected { border-color: var(--accent); background: var(--row-hi); }
-  #emoji-open-btn { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   #emoji-overlay { display: none; position: fixed; inset: 0; z-index: 299; background: rgba(0,0,0,0.4); }
   #emoji-overlay.open { display: block; }
   .toggle-label { display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal; font-size: 0.92rem; color: var(--text); cursor: pointer; }
@@ -496,7 +497,9 @@
     <label>ADC Symbol</label>
     <div class="symbol-row">
       <input type="text" id="f-adc-symbol" value="⚓" maxlength="3" placeholder="⚓">
-      <button type="button" id="emoji-open-btn" title="Browse all emoji">🔍</button>
+      <button type="button" id="emoji-open-btn" title="Browse all emoji" aria-label="Browse all emoji">
+        <svg viewBox="0 0 24 24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.2" y2="16.2"></line></svg>
+      </button>
       <button type="button" class="symbol-choice" data-symbol="⚓">⚓</button>
       <button type="button" class="symbol-choice" data-symbol="✳">✳</button>
       <button type="button" class="symbol-choice" data-symbol="➤">➤</button>
@@ -1028,7 +1031,6 @@ function setAdcSymbol(sym) {
   document.getElementById('f-adc-symbol').value = sym;
   document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === sym));
   document.querySelectorAll('.emoji-btn').forEach(b => b.classList.toggle('selected', b.dataset.emoji === sym));
-  document.getElementById('emoji-open-btn').textContent = sym || '🔍';
 }
 
 function buildEmojiGrid() {
@@ -1097,7 +1099,6 @@ document.getElementById('emoji-custom-input').addEventListener('input', e => {
 document.getElementById('f-adc-symbol').addEventListener('input', e => {
   const sym = e.target.value;
   document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === sym));
-  document.getElementById('emoji-open-btn').textContent = sym || '🔍';
 });
 
 // ── CUSTOM COLOR PICKER ──────────────────────────────────────────────────
@@ -1330,7 +1331,6 @@ function openForm(id = null) {
   const _sym = (p && p.adcSymbol) ? p.adcSymbol : '⚓';
   document.getElementById('f-adc-symbol').value = _sym;
   document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === _sym));
-  document.getElementById('emoji-open-btn').textContent = _sym || '🔍';
   document.getElementById('f-reversible').checked = !!(p && p.reversible);
 
   const ul = document.getElementById('upload-label');
