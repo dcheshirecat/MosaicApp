@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Mosaic Tracker</title>
 <style>
   :root {
@@ -19,10 +19,10 @@
     font-size: 16px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; min-height: 100vh; overflow-x: hidden; }
+  body { background: var(--surface); color: var(--text); font-family: 'Georgia', serif; min-height: 100vh; overflow-x: hidden; padding-bottom: env(safe-area-inset-bottom, 0px); }
 
   /* ── NAV ── */
-  #nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
+  #nav { display: flex; align-items: center; justify-content: space-between; padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 10px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; }
   #nav h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; }
   #nav-back { display: none; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
   #btn-settings { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 4px 8px; width: 40px; }
@@ -43,6 +43,17 @@
   .project-progress { font-size: 0.78rem; color: var(--success); margin-top: 2px; }
   .project-del { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
   #empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
+  #project-screen-header { text-align: center; padding: 8px 4px 24px; }
+  #project-screen-name { font-size: 1.3rem; font-weight: bold; font-style: italic; color: var(--accent); }
+  #project-screen-meta { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+  #media-screen-name { font-size: 1.05rem; font-weight: bold; margin-bottom: 14px; color: var(--text); }
+  #btn-media-add { width: 100%; padding: 13px; background: var(--accent2); color: #fff; border: none; border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-bottom: 18px; }
+  #media-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .media-item { position: relative; border-radius: 10px; overflow: hidden; background: var(--card); border: 1px solid var(--border); aspect-ratio: 1; }
+  .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .media-item .media-del { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: none; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.95rem; cursor: pointer; line-height: 1; }
+  .media-item .media-type-badge { position: absolute; bottom: 6px; left: 6px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 5px; letter-spacing: 0.03em; }
+  #media-empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
 
   /* ── FORMS ── */
   .form-group { margin-bottom: 16px; }
@@ -128,7 +139,26 @@
   .symbol-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .symbol-choice { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; }
   .symbol-choice.selected { border-color: var(--accent); background: var(--row-hi); }
-  #f-adc-symbol { width: 60px; flex-shrink: 0; text-align: center; }
+  #f-adc-symbol { width: 60px; flex-shrink: 0; text-align: center; font-size: 1.2rem; }
+  /* emoji picker popup */
+  #emoji-picker-pop { display: none; position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 300; background: var(--surface); border: 1px solid var(--border); border-radius: 16px 16px 0 0; padding: 12px 14px 20px; width: min(380px, 100vw); box-shadow: 0 -4px 24px rgba(0,0,0,0.5); max-height: 70vh; display: none; flex-direction: column; }
+  #emoji-picker-pop.open { display: flex; }
+  #emoji-picker-drag { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 12px; }
+  #emoji-search-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  #emoji-search-row input { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 1rem; font-family: inherit; outline: none; }
+  #emoji-search-row input:focus { border-color: var(--accent); }
+  #emoji-custom-input { width: 54px; height: 40px; text-align: center; font-size: 1.3rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; color: var(--text); font-family: inherit; outline: none; flex-shrink: 0; }
+  #emoji-custom-input:focus { border-color: var(--accent); }
+  #emoji-cat-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; flex-shrink: 0; scrollbar-width: none; }
+  #emoji-cat-tabs::-webkit-scrollbar { display: none; }
+  .emoji-cat-tab { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.78rem; font-family: inherit; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .emoji-cat-tab.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+  #emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; overflow-y: auto; flex: 1; padding: 2px; }
+  .emoji-btn { width: 100%; aspect-ratio: 1; border-radius: 8px; background: var(--card); border: 1px solid transparent; font-size: 1.4rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color 0.1s; }
+  .emoji-btn:active, .emoji-btn.selected { border-color: var(--accent); background: var(--row-hi); }
+  #emoji-open-btn { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  #emoji-overlay { display: none; position: fixed; inset: 0; z-index: 299; background: rgba(0,0,0,0.4); }
+  #emoji-overlay.open { display: block; }
   .toggle-label { display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal; font-size: 0.92rem; color: var(--text); cursor: pointer; }
   .toggle-label input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--accent); }
 
@@ -285,6 +315,37 @@
   <input type="file" id="photo-design-file" accept="image/*" style="display:none">
 </div>
 
+<div id="screen-project" class="screen">
+  <div id="project-screen-header">
+    <div id="project-screen-name"></div>
+    <div id="project-screen-meta"></div>
+  </div>
+  <button class="home-nav-card" id="btn-project-chart">
+    <span class="home-nav-card-icon">📊</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Chart</span>
+      <span class="home-nav-card-desc">Open the row-by-row tracker and pattern chart.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+  <button class="home-nav-card" id="btn-project-media">
+    <span class="home-nav-card-icon">📷</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Attach Media</span>
+      <span class="home-nav-card-desc" id="project-media-desc">Add progress photos or videos to this project.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+</div>
+
+<div id="screen-media" class="screen">
+  <div id="media-screen-name"></div>
+  <input type="file" id="media-file-input" accept="image/*,video/*" multiple style="display:none">
+  <button id="btn-media-add">+ Add Photo or Video</button>
+  <div id="media-grid"></div>
+  <div id="media-empty-state">No media yet.<br>Tap above to add a progress photo or video.</div>
+</div>
+
 <div id="screen-list" class="screen">
   <button id="btn-new">+ New Project</button>
   <div id="project-list"></div>
@@ -375,14 +436,27 @@
   <div class="form-group">
     <label>ADC Symbol</label>
     <div class="symbol-row">
-      <input type="text" id="f-adc-symbol" value="⚓" maxlength="2">
+      <input type="text" id="f-adc-symbol" value="⚓" maxlength="3" placeholder="⚓">
+      <button type="button" id="emoji-open-btn" title="Browse all emoji">🔍</button>
       <button type="button" class="symbol-choice" data-symbol="⚓">⚓</button>
       <button type="button" class="symbol-choice" data-symbol="✳">✳</button>
       <button type="button" class="symbol-choice" data-symbol="➤">➤</button>
       <button type="button" class="symbol-choice" data-symbol="✛">✛</button>
       <button type="button" class="symbol-choice" data-symbol="✦">✦</button>
     </div>
-    <div class="hint">Shown on every anchored double crochet (overlay/spike) stitch in a PDF-imported chart, in place of the "X" marker.</div>
+    <div class="hint">Shown on every anchored double crochet stitch. Pick a preset, browse all emoji, or type/paste any character directly into the box.</div>
+  </div>
+
+  <!-- emoji picker -->
+  <div id="emoji-overlay"></div>
+  <div id="emoji-picker-pop">
+    <div id="emoji-drag"></div>
+    <div id="emoji-search-row">
+      <input type="text" id="emoji-search" placeholder="Search emoji…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <input type="text" id="emoji-custom-input" maxlength="3" placeholder="✏️" title="Type or paste any emoji">
+    </div>
+    <div id="emoji-cat-tabs"></div>
+    <div id="emoji-grid"></div>
   </div>
 
   <div class="form-group">
@@ -764,10 +838,99 @@ function renderList() {
         saveAll(); renderList();
       }
     });
-    card.addEventListener('click', () => openTracker(p.id));
+    card.addEventListener('click', () => openProjectScreen(p.id));
     list.appendChild(card);
   });
 }
+
+// ── PROJECT SCREEN (Chart / Attach Media hub) ──────────────────────────────
+function openProjectScreen(id) {
+  activeId = id;
+  const p = getProject(id); if (!p) return;
+  document.getElementById('project-screen-name').textContent = p.name;
+  document.getElementById('project-screen-meta').textContent = `${p.stitches} sts · ${p.totalRows} rows`;
+  const count = (p.media || []).length;
+  document.getElementById('project-media-desc').textContent = count
+    ? `${count} item${count === 1 ? '' : 's'} attached — add more or review them.`
+    : 'Add progress photos or videos to this project.';
+  showScreen('project');
+}
+document.getElementById('btn-project-chart').addEventListener('click', () => openTracker(activeId));
+document.getElementById('btn-project-media').addEventListener('click', () => openMediaScreen(activeId));
+
+// ── ATTACH MEDIA (photos & videos, per project) ─────────────────────────────
+const MEDIA_MAX_BYTES = 25 * 1024 * 1024; // ~25MB/file — stored on-device as a data URL
+
+function openMediaScreen(id) {
+  activeId = id;
+  const p = getProject(id); if (!p) return;
+  document.getElementById('media-screen-name').textContent = p.name;
+  renderMediaGrid(p);
+  showScreen('media');
+}
+
+function renderMediaGrid(p) {
+  const grid = document.getElementById('media-grid');
+  const empty = document.getElementById('media-empty-state');
+  grid.innerHTML = '';
+  const media = p.media || [];
+  empty.style.display = media.length ? 'none' : '';
+  media.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'media-item';
+    const el = document.createElement(m.type === 'video' ? 'video' : 'img');
+    el.src = m.dataUrl;
+    if (m.type === 'video') { el.muted = true; el.playsInline = true; el.controls = true; }
+    item.appendChild(el);
+    const badge = document.createElement('span');
+    badge.className = 'media-type-badge';
+    badge.textContent = m.type === 'video' ? '🎬 video' : '📷 photo';
+    item.appendChild(badge);
+    const del = document.createElement('button');
+    del.className = 'media-del';
+    del.textContent = '×';
+    del.title = 'Remove';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm('Remove this item?')) return;
+      p.media = (p.media || []).filter(x => x.id !== m.id);
+      saveAll();
+      renderMediaGrid(p);
+    });
+    item.appendChild(del);
+    grid.appendChild(item);
+  });
+}
+
+document.getElementById('btn-media-add').addEventListener('click', () => {
+  document.getElementById('media-file-input').click();
+});
+document.getElementById('media-file-input').addEventListener('change', async (e) => {
+  const p = getProject(activeId); if (!p) return;
+  const files = Array.from(e.target.files || []);
+  e.target.value = ''; // allow re-selecting the same file later
+  if (!files.length) return;
+  if (!p.media) p.media = [];
+  let added = 0, skipped = 0;
+  for (const file of files) {
+    if (file.size > MEDIA_MAX_BYTES) { skipped++; continue; }
+    const isVideo = file.type.startsWith('video/');
+    if (!isVideo && !file.type.startsWith('image/')) { skipped++; continue; }
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
+      p.media.push({ id: uid(), type: isVideo ? 'video' : 'image', dataUrl, name: file.name, addedAt: Date.now() });
+      added++;
+    } catch { skipped++; }
+  }
+  if (added) { await saveAll(); renderMediaGrid(p); }
+  if (skipped) toast(`${added ? `Added ${added}. ` : ''}${skipped} file${skipped === 1 ? '' : 's'} skipped (too large or unsupported)`);
+  else if (added) toast(`Added ${added} item${added === 1 ? '' : 's'}`);
+});
 
 // ── FORM ──────────────────────────────────────────────────────────────────
 function setChartModeTab(mode) {
@@ -780,10 +943,101 @@ document.querySelectorAll('.chart-mode-tab').forEach(tab => {
 });
 document.querySelectorAll('.symbol-choice').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.getElementById('f-adc-symbol').value = btn.dataset.symbol;
-    document.querySelectorAll('.symbol-choice').forEach(b => b.classList.remove('selected'));
-    btn.classList.add('selected');
+    setAdcSymbol(btn.dataset.symbol);
   });
+});
+
+// ── EMOJI PICKER ─────────────────────────────────────────────────────────
+const EMOJI_CATS = [
+  { label: 'Craft',   emoji: ['🧶','🪡','🧵','✂','📐','📏','🪢','🎀','🪆','🧸','🎁','🎨','🖌','🖊','✏','🖋','📌','📍','🔖','🏷'] },
+  { label: 'Symbols', emoji: ['⚓','✳','✦','✛','✜','✚','✕','✖','✗','✘','×','✝','✞','✟','☩','❖','◆','◇','□','■','○','●','△','▲','▽','▼','◈','◉','⊕','⊗','⊞','⊠','⊡','⋆','※','‼','⁉','‽','¿','Ø'] },
+  { label: 'Stars',   emoji: ['⭐','🌟','✨','💫','⚡','🌙','☀','🌈','☁','❄','🔥','💥','🌊','🍀','🌸','🌺','🌻','🌹','🌷','🏵','💐','🍁','🍂','🌿','🌾'] },
+  { label: 'Hearts',  emoji: ['❤','🧡','💛','💚','💙','💜','🖤','🤍','🤎','❤‍🔥','💖','💗','💓','💞','💕','💝','💘','♥','♡','💟','❣','💌'] },
+  { label: 'Arrows',  emoji: ['➤','➡','⬡','▶','►','▸','→','↑','↓','←','↗','↘','↙','↖','↩','↪','↔','↕','⇄','⇅','⇆','⇇','⇉','⬆','⬇','⬅','↰','↱','↲','↳'] },
+  { label: 'Animals', emoji: ['🦋','🐝','🐞','🦎','🐢','🦜','🐦','🦆','🦉','🦅','🐱','🐶','🐰','🦊','🐻','🐼','🐨','🦁','🐯','🐸','🦋','🌸','🐙','🦄'] },
+  { label: 'Gems',    emoji: ['💎','💍','👑','🏆','🥇','🌟','⭐','🔮','🪩','🧿','🫧','💠','🔷','🔹','🔶','🔸','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜'] },
+  { label: 'Food',    emoji: ['🍓','🍒','🍎','🍊','🍋','🍑','🍇','🫐','🍈','🍉','🍌','🍍','🥭','🍅','🫒','🌽','🌸','🍄','🌰','🍁','🌺','🌻','🌹','🍀'] },
+  { label: 'Faces',   emoji: ['😊','😍','🥰','😎','🤩','😇','🥳','😂','😆','😁','🙃','🥹','😌','😏','🤭','🥸','🤓','😜','🤪','😬','🫠','🤯','🥺','😻'] },
+  { label: 'Misc',    emoji: ['⚜','🔱','📛','🎯','🎲','🎰','🎳','🎮','🕹','🎭','🎪','🎨','🖼','🎠','🎡','🎢','🎟','🎫','🪬','🧲','🔑','🗝','🪄','🔮'] },
+];
+
+let emojiCatIndex = 0;
+let emojiSearch = '';
+
+function setAdcSymbol(sym) {
+  document.getElementById('f-adc-symbol').value = sym;
+  document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === sym));
+  document.querySelectorAll('.emoji-btn').forEach(b => b.classList.toggle('selected', b.dataset.emoji === sym));
+  document.getElementById('emoji-open-btn').textContent = sym || '🔍';
+}
+
+function buildEmojiGrid() {
+  const grid = document.getElementById('emoji-grid');
+  const cur = document.getElementById('f-adc-symbol').value.trim();
+  const q = emojiSearch.toLowerCase();
+  let pool;
+  if (q) {
+    pool = EMOJI_CATS.flatMap(c => c.emoji).filter((e, i, a) => a.indexOf(e) === i);
+  } else {
+    pool = EMOJI_CATS[emojiCatIndex].emoji;
+  }
+  grid.innerHTML = '';
+  pool.forEach(em => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-btn' + (em === cur ? ' selected' : '');
+    btn.dataset.emoji = em;
+    btn.textContent = em;
+    btn.addEventListener('click', () => { setAdcSymbol(em); closeEmojiPicker(); });
+    grid.appendChild(btn);
+  });
+}
+
+function buildEmojiCatTabs() {
+  const tabs = document.getElementById('emoji-cat-tabs');
+  tabs.innerHTML = '';
+  EMOJI_CATS.forEach((cat, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'emoji-cat-tab' + (i === emojiCatIndex ? ' active' : '');
+    btn.textContent = cat.label;
+    btn.addEventListener('click', () => {
+      emojiCatIndex = i;
+      emojiSearch = '';
+      document.getElementById('emoji-search').value = '';
+      document.querySelectorAll('.emoji-cat-tab').forEach((b, j) => b.classList.toggle('active', j === i));
+      buildEmojiGrid();
+    });
+    tabs.appendChild(btn);
+  });
+}
+
+function openEmojiPicker() {
+  document.getElementById('emoji-overlay').classList.add('open');
+  document.getElementById('emoji-picker-pop').classList.add('open');
+  buildEmojiCatTabs();
+  buildEmojiGrid();
+}
+
+function closeEmojiPicker() {
+  document.getElementById('emoji-overlay').classList.remove('open');
+  document.getElementById('emoji-picker-pop').classList.remove('open');
+}
+
+document.getElementById('emoji-open-btn').addEventListener('click', openEmojiPicker);
+document.getElementById('emoji-overlay').addEventListener('click', closeEmojiPicker);
+document.getElementById('emoji-search').addEventListener('input', e => {
+  emojiSearch = e.target.value.trim();
+  buildEmojiGrid();
+});
+document.getElementById('emoji-custom-input').addEventListener('input', e => {
+  const v = e.target.value.trim();
+  if (v) { setAdcSymbol(v); e.target.value = ''; }
+});
+document.getElementById('f-adc-symbol').addEventListener('input', e => {
+  const sym = e.target.value;
+  document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === sym));
+  document.getElementById('emoji-open-btn').textContent = sym || '🔍';
 });
 
 // ── CUSTOM COLOR PICKER ──────────────────────────────────────────────────
@@ -1013,8 +1267,10 @@ function openForm(id = null) {
   document.getElementById('f-color-b-name').value = p ? p.colorBName : '';
   setColorPickerValue('a', p ? p.colorAHex : '#f5e6c8');
   setColorPickerValue('b', p ? p.colorBHex : '#2a7f7f');
-  document.getElementById('f-adc-symbol').value = (p && p.adcSymbol) ? p.adcSymbol : '⚓';
-  document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === document.getElementById('f-adc-symbol').value));
+  const _sym = (p && p.adcSymbol) ? p.adcSymbol : '⚓';
+  document.getElementById('f-adc-symbol').value = _sym;
+  document.querySelectorAll('.symbol-choice').forEach(b => b.classList.toggle('selected', b.dataset.symbol === _sym));
+  document.getElementById('emoji-open-btn').textContent = _sym || '🔍';
   document.getElementById('f-reversible').checked = !!(p && p.reversible);
 
   const ul = document.getElementById('upload-label');
@@ -2694,6 +2950,9 @@ document.getElementById('nav-back').addEventListener('click', () => {
   const pbw = document.getElementById('screen-photo-bw');
   const pch = document.getElementById('screen-photo-chart');
   const ls = document.getElementById('screen-list');
+  const ps = document.getElementById('screen-project');
+  const ms = document.getElementById('screen-media');
+  const ts = document.getElementById('screen-tracker');
   if (pch.classList.contains('active')) {
     showScreen('photo-bw');
     renderPhotoBwPreview();
@@ -2703,6 +2962,12 @@ document.getElementById('nav-back').addEventListener('click', () => {
     editingId ? openTracker(editingId) : showScreen('list');
   } else if (ss.classList.contains('active')) {
     showScreen('home');
+  } else if (ms.classList.contains('active')) {
+    openProjectScreen(activeId);
+  } else if (ts.classList.contains('active')) {
+    openProjectScreen(activeId);
+  } else if (ps.classList.contains('active')) {
+    showScreen('list');
   } else if (ls.classList.contains('active')) {
     showScreen('home');
   } else {
@@ -2745,6 +3010,28 @@ function syncWindowViewUI() {
   syncWindowViewUI();
   renderList();
 })();
+
+// ── SAVE ON APP CLOSE / BACKGROUND ──────────────────────────────────────
+// Android WebView fires visibilitychange when the app is backgrounded and
+// pagehide when the WebView is being destroyed.  Both use synchronous
+// localStorage so the write completes before the process is suspended.
+function saveAllSync() {
+  try {
+    const raw = JSON.stringify(projects);
+    if (window.AndroidStorage) { window.AndroidStorage.set('mc_projects', raw); }
+    else { localStorage.setItem('mc_projects', raw); }
+  } catch(e) {}
+  try {
+    const raw = JSON.stringify(settings);
+    if (window.AndroidStorage) { window.AndroidStorage.set('mc_settings', raw); }
+    else { localStorage.setItem('mc_settings', raw); }
+  } catch(e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') saveAllSync();
+});
+window.addEventListener('pagehide', saveAllSync);
+
 </script>
 </body>
 </html>
