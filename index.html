@@ -1494,12 +1494,18 @@ function renderChartGrid(p) {
   renderChartRowRuler(g, cs, p.currentRow, p.colorAHex, p.colorBHex);
   renderChartRowRulerRight(g, cs, p.currentRow, p.colorAHex, p.colorBHex, g);
 
-  // keep current row scrolled into view (vertical only — the windowed
-  // view already fits horizontally, and full view scrolls horizontally
-  // by hand)
+  // Scroll current row into the vertical centre of the viewport.
+  // Clamp strictly to [0, scrollHeight - clientHeight] so we never land
+  // in empty space below or above the canvas regardless of cell size or
+  // which mode (windowed vs full) we just switched into.
   if (curRowIndexFromTop >= 0) {
-    const targetY = curRowIndexFromTop * cs - wrap.clientHeight / 2;
-    wrap.scrollTop = Math.max(0, targetY);
+    const rowTopPx   = curRowIndexFromTop * cs;
+    const rowMidPx   = rowTopPx + cs / 2;
+    const targetY    = rowMidPx - wrap.clientHeight / 2;
+    // scrollHeight isn't reliable until the browser has laid out the new
+    // canvas dimensions, so compute the maximum scroll from canvas.height.
+    const maxScrollY = Math.max(0, canvas.height - wrap.clientHeight);
+    wrap.scrollTop   = Math.max(0, Math.min(maxScrollY, targetY));
   }
   renderStitchMarker(p, cs, colStart, colEnd);
 }
