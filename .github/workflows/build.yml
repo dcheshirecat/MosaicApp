@@ -110,7 +110,7 @@ jobs:
                 storeFile file(System.getenv("MOSAIC_KEYSTORE_PATH") ?: "nonexistent.jks")
                 storePassword System.getenv("MOSAIC_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("MOSAIC_KEY_ALIAS")
-                keyPassword System.getenv("MOSAIC_KEYSTORE_PASSWORD")
+                keyPassword System.getenv("MOSAIC_KEY_PASSWORD")
               }
             }
             buildTypes {
@@ -363,21 +363,26 @@ jobs:
           test -s app/src/main/assets/vendor/pdf.min.js
           test -s app/src/main/assets/vendor/pdf.worker.min.js
 
-      - name: Decode release keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.MOSAIC_KEYSTORE_BASE64 }}
+      - name: Decode keystore
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
+          if [ -z "${{ secrets.MOSAIC_KEYSTORE_BASE64 }}" ]; then
             echo "::error::MOSAIC_KEYSTORE_BASE64 repo secret is not set — see the keystore setup instructions."
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mosaic-tracker-release.jks"
+          echo "${{ secrets.MOSAIC_KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/mosaic-tracker-release.jks
 
       - name: Build signed release APK and AAB
         env:
-          MOSAIC_KEYSTORE_PATH: ${{ runner.temp }}/mosaic-tracker-release.jks
+          MOSAIC_KEYSTORE_PATH: ${{ github.workspace }}/mosaic-tracker-release.jks
           MOSAIC_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_KEYSTORE_PASSWORD }}
           MOSAIC_KEY_ALIAS: ${{ secrets.MOSAIC_KEY_ALIAS }}
+          # This keystore is a PKCS12 file, which requires the store
+          # password and key password to be identical (keytool enforces
+          # this at generation time) — so KEY_PASSWORD is intentionally
+          # the SAME secret value as KEYSTORE_PASSWORD, not a second,
+          # independently-set one. Keep it that way; setting it to a
+          # different value will make the build fail to unlock the key.
+          MOSAIC_KEY_PASSWORD: ${{ secrets.MOSAIC_KEYSTORE_PASSWORD }}
         run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
       - name: Collect signed outputs
