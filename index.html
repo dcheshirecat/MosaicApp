@@ -97,10 +97,16 @@
 
   /* photo-to-chart design screen */
   #screen-photo-bw, #screen-photo-chart { padding: 16px; }
-  .photo-row { display: flex; gap: 12px; margin-bottom: 16px; }
+  .photo-row { display: flex; gap: 12px; margin-bottom: 10px; }
   .photo-col { flex: 1; min-width: 0; }
   .photo-col-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-  #photo-source-canvas, #photo-preview-canvas { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; display: block; }
+  #photo-source-canvas, #photo-preview-canvas { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; display: block; touch-action: none; }
+  #photo-source-wrap { position: relative; }
+  #photo-crop-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; touch-action: none; }
+  #photo-crop-overlay.active { display: block; }
+  .photo-edit-actions { display: flex; gap: 8px; margin: 8px 0 16px; }
+  .photo-edit-actions button { flex: 1; padding: 9px 6px; font-size: 0.78rem; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-family: inherit; cursor: pointer; }
+  .photo-edit-actions button.primary { background: var(--accent2); border-color: var(--accent2); color: #fff; }
   .slider-row { margin-bottom: 14px; }
   .slider-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .slider-row label { margin-bottom: 0; }
@@ -109,8 +115,13 @@
   .photo-dim-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
   .photo-dim-row .form-group { flex: 1; margin-bottom: 0; }
   .photo-dim-row .btn-small { flex-shrink: 0; white-space: nowrap; }
-  #photo-grid-preview-wrap { width: 100%; overflow: auto; max-height: 45vh; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); margin-bottom: 16px; }
-  #photo-grid-preview-canvas { display: block; }
+  .photo-preview-toolbar { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; }
+  .photo-preview-toolbar .photo-col-label { margin-bottom: 0; flex: 1; }
+  .photo-zoom-btns { display: flex; gap: 6px; }
+  .photo-zoom-btns button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 1rem; font-family: inherit; cursor: pointer; line-height: 1; }
+  .photo-zoom-btns button#btn-photo-zoom-fit { width: auto; padding: 0 10px; font-size: 0.72rem; }
+  #photo-grid-preview-wrap { width: 100%; overflow: auto; max-height: 55vh; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); margin-bottom: 16px; }
+  #photo-grid-preview-canvas { display: block; image-rendering: pixelated; }
   #photo-stats { font-size: 0.78rem; color: var(--muted); margin-bottom: 14px; text-align: center; }
 
   /* ADC symbol picker */
@@ -230,7 +241,7 @@
   #home-hero-title { font-size: 1.5rem; font-weight: bold; font-style: italic; color: var(--accent); margin-bottom: 6px; }
   #home-hero-sub { font-size: 0.88rem; color: var(--muted); line-height: 1.5; max-width: 320px; margin: 0 auto; }
   .home-nav-card { width: 100%; display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; margin-bottom: 14px; cursor: pointer; text-align: left; font-family: inherit; color: var(--text); }
-  .home-nav-card:active { border-color: var(--accent); }
+  .home-nav-card:active { background: var(--border); }
   .home-nav-card-icon { font-size: 1.8rem; flex-shrink: 0; }
   .home-nav-card-text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
   .home-nav-card-title { font-size: 1.05rem; font-weight: bold; }
@@ -412,12 +423,21 @@
   <div class="photo-row">
     <div class="photo-col">
       <div class="photo-col-label">Original</div>
-      <canvas id="photo-source-canvas"></canvas>
+      <div id="photo-source-wrap">
+        <canvas id="photo-source-canvas"></canvas>
+        <canvas id="photo-crop-overlay"></canvas>
+      </div>
     </div>
     <div class="photo-col">
       <div class="photo-col-label">Black &amp; white preview</div>
       <canvas id="photo-preview-canvas"></canvas>
     </div>
+  </div>
+
+  <div class="photo-edit-actions">
+    <button type="button" id="btn-photo-crop-toggle">✂️ Crop</button>
+    <button type="button" id="btn-photo-rotate">⟳ Rotate</button>
+    <button type="button" id="btn-photo-reset">Reset</button>
   </div>
 
   <div class="slider-row">
@@ -459,7 +479,14 @@
   </div>
   <div class="hint">Dimensions are set automatically from your photo's proportions — adjust them here for a bigger or smaller finished piece.</div>
 
-  <div class="photo-col-label" style="margin-top:14px">Chart preview</div>
+  <div class="photo-preview-toolbar">
+    <div class="photo-col-label" style="margin-top:0">Chart preview</div>
+    <div class="photo-zoom-btns">
+      <button type="button" id="btn-photo-zoom-out" title="Zoom out">−</button>
+      <button type="button" id="btn-photo-zoom-fit" title="Fit whole chart on screen">Fit</button>
+      <button type="button" id="btn-photo-zoom-in" title="Zoom in">+</button>
+    </div>
+  </div>
   <div id="photo-grid-preview-wrap">
     <canvas id="photo-grid-preview-canvas"></canvas>
   </div>
@@ -1299,7 +1326,13 @@ function extractStitchFiddleGlyphGrid(opList, OPS) {
 // crochet spike where the photo's thresholded tone at that position
 // differs from the row's own working color — matching the same logic
 // verified against real Stitch Fiddle PDFs elsewhere in this app.
+//
+// photoImg holds the CURRENT working image — either the originally loaded
+// <img>, or a <canvas> after a crop/rotate. Both are valid drawImage()
+// sources, so the rest of the pipeline (source preview, grayscale cache)
+// doesn't need to care which one it is.
 let photoImg = null;
+let photoOriginalDataUrl = null; // untouched upload, for Reset
 let photoGray = null; // Float32Array, luminance 0-255, photoImg's natural size
 let photoNaturalW = 0, photoNaturalH = 0;
 
@@ -1307,6 +1340,7 @@ document.getElementById('photo-design-file').addEventListener('change', e => {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = ev => {
+    photoOriginalDataUrl = ev.target.result;
     const img = new Image();
     img.onload = () => {
       photoImg = img;
@@ -1320,7 +1354,11 @@ document.getElementById('photo-design-file').addEventListener('change', e => {
   e.target.value = '';
 });
 
-function openPhotoBwScreen() {
+// Redraws the "Original" preview canvas and rebuilds the cached grayscale
+// working buffer from whatever photoImg currently is. Called on initial
+// load and after every crop/rotate/reset — but does NOT touch the BW
+// sliders or switch screens, so it's safe to call mid-edit.
+function refreshPhotoWorkingData() {
   const src = document.getElementById('photo-source-canvas');
   const maxW = 320;
   const scale = Math.min(1, maxW / photoNaturalW);
@@ -1345,13 +1383,219 @@ function openPhotoBwScreen() {
   }
   photoGray.w = workW; photoGray.h = workH;
 
+  // keep the crop overlay's own pixel grid matched to the (possibly
+  // resized) source canvas so handle math stays accurate
+  requestAnimationFrame(resizeCropOverlay);
+}
+
+function openPhotoBwScreen() {
+  refreshPhotoWorkingData();
+
   document.getElementById('photo-threshold').value = 128;
   document.getElementById('photo-invert').checked = false;
   document.getElementById('photo-dither').checked = true;
 
+  exitPhotoCropMode(false);
   showScreen('photo-bw');
   renderPhotoBwPreview();
 }
+
+// ── Crop & rotate ────────────────────────────────────────────────────────
+// The crop overlay is a second canvas stacked exactly over the "Original"
+// preview canvas (same CSS box, absolutely positioned). Its own pixel grid
+// matches the source canvas's on-screen (CSS/client) size 1:1, so pointer
+// coordinates translate directly into overlay pixels with no extra scale
+// math; the crop rect only gets converted into the photo's real, full-
+// resolution pixel coordinates once, at Apply time.
+let cropActive = false;
+let cropRect = null;   // {x,y,w,h} in overlay-canvas pixels
+let cropDrag = null;
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function resizeCropOverlay() {
+  const src = document.getElementById('photo-source-canvas');
+  const ov  = document.getElementById('photo-crop-overlay');
+  if (!src.clientWidth || !src.clientHeight) return;
+  ov.width  = src.clientWidth;
+  ov.height = src.clientHeight;
+  if (cropActive) drawCropOverlay();
+}
+window.addEventListener('resize', () => { if (cropActive) resizeCropOverlay(); });
+
+function enterPhotoCropMode() {
+  if (!photoImg) return;
+  resizeCropOverlay();
+  const ov = document.getElementById('photo-crop-overlay');
+  const inset = 0.1;
+  cropRect = { x: ov.width * inset, y: ov.height * inset, w: ov.width * (1 - 2 * inset), h: ov.height * (1 - 2 * inset) };
+  cropActive = true;
+  ov.classList.add('active');
+  document.getElementById('btn-photo-crop-toggle').textContent = '✓ Apply Crop';
+  drawCropOverlay();
+}
+
+function exitPhotoCropMode(apply) {
+  if (apply && cropActive && cropRect) applyPhotoCrop();
+  cropActive = false;
+  cropDrag = null;
+  const ov = document.getElementById('photo-crop-overlay');
+  ov.classList.remove('active');
+  ov.getContext('2d').clearRect(0, 0, ov.width, ov.height);
+  document.getElementById('btn-photo-crop-toggle').textContent = '✂️ Crop';
+}
+
+document.getElementById('btn-photo-crop-toggle').addEventListener('click', () => {
+  if (!cropActive) enterPhotoCropMode();
+  else exitPhotoCropMode(true);
+});
+
+function drawCropOverlay() {
+  const ov = document.getElementById('photo-crop-overlay');
+  const ctx = ov.getContext('2d');
+  ctx.clearRect(0, 0, ov.width, ov.height);
+  if (!cropActive || !cropRect) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, ov.width, ov.height);
+  ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cropRect.x + 1, cropRect.y + 1, Math.max(0, cropRect.w - 2), Math.max(0, cropRect.h - 2));
+  const hs = 16;
+  ctx.fillStyle = '#ffffff';
+  const corners = [
+    [cropRect.x, cropRect.y], [cropRect.x + cropRect.w, cropRect.y],
+    [cropRect.x, cropRect.y + cropRect.h], [cropRect.x + cropRect.w, cropRect.y + cropRect.h]
+  ];
+  for (const [cx, cy] of corners) ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs);
+}
+
+function overlayPointFromEvent(ov, e) {
+  const rect = ov.getBoundingClientRect();
+  const scaleX = ov.width / rect.width, scaleY = ov.height / rect.height;
+  return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+}
+
+function hitTestCropHandle(pt) {
+  const hs = 24;
+  const corners = {
+    tl: { x: cropRect.x, y: cropRect.y },
+    tr: { x: cropRect.x + cropRect.w, y: cropRect.y },
+    bl: { x: cropRect.x, y: cropRect.y + cropRect.h },
+    br: { x: cropRect.x + cropRect.w, y: cropRect.y + cropRect.h }
+  };
+  for (const k in corners) {
+    if (Math.abs(pt.x - corners[k].x) < hs && Math.abs(pt.y - corners[k].y) < hs) return k;
+  }
+  return null;
+}
+
+(() => {
+  const ov = document.getElementById('photo-crop-overlay');
+  const MIN = 24;
+
+  ov.addEventListener('pointerdown', e => {
+    if (!cropActive || !cropRect) return;
+    ov.setPointerCapture(e.pointerId);
+    const pt = overlayPointFromEvent(ov, e);
+    const handle = hitTestCropHandle(pt);
+    if (handle) {
+      cropDrag = { mode: 'corner', corner: handle };
+    } else if (pt.x >= cropRect.x && pt.x <= cropRect.x + cropRect.w && pt.y >= cropRect.y && pt.y <= cropRect.y + cropRect.h) {
+      cropDrag = { mode: 'move', startX: pt.x, startY: pt.y, orig: { ...cropRect } };
+    } else {
+      cropDrag = null;
+    }
+    e.preventDefault();
+  });
+
+  ov.addEventListener('pointermove', e => {
+    if (!cropActive || !cropDrag || !cropRect) return;
+    const pt = overlayPointFromEvent(ov, e);
+    if (cropDrag.mode === 'corner') {
+      const x = cropRect.x, y = cropRect.y, x2 = cropRect.x + cropRect.w, y2 = cropRect.y + cropRect.h;
+      if (cropDrag.corner === 'tl') {
+        const nx = clamp(Math.min(pt.x, x2 - MIN), 0, ov.width), ny = clamp(Math.min(pt.y, y2 - MIN), 0, ov.height);
+        cropRect = { x: nx, y: ny, w: x2 - nx, h: y2 - ny };
+      } else if (cropDrag.corner === 'tr') {
+        const nx = clamp(Math.max(pt.x, x + MIN), 0, ov.width), ny = clamp(Math.min(pt.y, y2 - MIN), 0, ov.height);
+        cropRect = { x, y: ny, w: nx - x, h: y2 - ny };
+      } else if (cropDrag.corner === 'bl') {
+        const nx = clamp(Math.min(pt.x, x2 - MIN), 0, ov.width), ny = clamp(Math.max(pt.y, y + MIN), 0, ov.height);
+        cropRect = { x: nx, y, w: x2 - nx, h: ny - y };
+      } else if (cropDrag.corner === 'br') {
+        const nx = clamp(Math.max(pt.x, x + MIN), 0, ov.width), ny = clamp(Math.max(pt.y, y + MIN), 0, ov.height);
+        cropRect = { x, y, w: nx - x, h: ny - y };
+      }
+    } else if (cropDrag.mode === 'move') {
+      const dx = pt.x - cropDrag.startX, dy = pt.y - cropDrag.startY;
+      const nx = clamp(cropDrag.orig.x + dx, 0, ov.width - cropDrag.orig.w);
+      const ny = clamp(cropDrag.orig.y + dy, 0, ov.height - cropDrag.orig.h);
+      cropRect = { x: nx, y: ny, w: cropDrag.orig.w, h: cropDrag.orig.h };
+    }
+    drawCropOverlay();
+    e.preventDefault();
+  });
+
+  const endDrag = () => { cropDrag = null; };
+  ov.addEventListener('pointerup', endDrag);
+  ov.addEventListener('pointercancel', endDrag);
+})();
+
+// Crops photoImg down to the selected region, at full source resolution
+// (the crop rect lives in on-screen preview pixels, so it's scaled back up
+// to the real photo's pixel grid here) — everything downstream (the BW
+// preview, the stitch grid) then rebuilds from this cropped result.
+function applyPhotoCrop() {
+  const src = document.getElementById('photo-source-canvas');
+  const scaleX = photoNaturalW / src.clientWidth;
+  const scaleY = photoNaturalH / src.clientHeight;
+  const sx = Math.round(cropRect.x * scaleX);
+  const sy = Math.round(cropRect.y * scaleY);
+  const sw = Math.max(1, Math.round(cropRect.w * scaleX));
+  const sh = Math.max(1, Math.round(cropRect.h * scaleY));
+
+  const out = document.createElement('canvas');
+  out.width = sw; out.height = sh;
+  out.getContext('2d').drawImage(photoImg, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  photoImg = out;
+  photoNaturalW = sw; photoNaturalH = sh;
+  cropRect = null;
+  refreshPhotoWorkingData();
+  renderPhotoBwPreview();
+  toast('Crop applied');
+}
+
+document.getElementById('btn-photo-rotate').addEventListener('click', () => {
+  if (!photoImg) return;
+  if (cropActive) exitPhotoCropMode(false); // discard any in-progress crop rect, it no longer applies post-rotate
+  const out = document.createElement('canvas');
+  out.width = photoNaturalH; out.height = photoNaturalW;
+  const octx = out.getContext('2d');
+  octx.translate(out.width / 2, out.height / 2);
+  octx.rotate(Math.PI / 2);
+  octx.drawImage(photoImg, -photoNaturalW / 2, -photoNaturalH / 2);
+  photoImg = out;
+  const tmp = photoNaturalW; photoNaturalW = photoNaturalH; photoNaturalH = tmp;
+  refreshPhotoWorkingData();
+  renderPhotoBwPreview();
+});
+
+document.getElementById('btn-photo-reset').addEventListener('click', () => {
+  if (!photoOriginalDataUrl) return;
+  if (cropActive) exitPhotoCropMode(false);
+  const img = new Image();
+  img.onload = () => {
+    photoImg = img;
+    photoNaturalW = img.naturalWidth;
+    photoNaturalH = img.naturalHeight;
+    refreshPhotoWorkingData();
+    renderPhotoBwPreview();
+    toast('Reset to original photo');
+  };
+  img.src = photoOriginalDataUrl;
+});
 
 // Step 1: just the black & white tone preview — no chart/dimension logic
 // yet, so the user can focus purely on getting the two-tone image right.
@@ -1396,6 +1640,7 @@ document.getElementById('btn-photo-continue').addEventListener('click', () => {
   const rows = Math.round(cols * (photoNaturalH / photoNaturalW) * 1.4);
   document.getElementById('photo-cols').value = cols;
   document.getElementById('photo-rows').value = Math.max(10, Math.min(400, rows));
+  photoPreviewZoomMult = 1; // start each visit to step 2 fitted to screen
   showScreen('photo-chart');
   renderPhotoChartPreview();
 });
@@ -1472,6 +1717,33 @@ function buildOverlayChartFromBinary(bin, cols, rows, invert) {
 }
 
 let photoPendingResult = null;
+let photoPreviewZoomMult = 1; // 1 = fit-to-screen baseline, set by buttons below
+
+// Scales the already-drawn chart-preview canvas via CSS size only (cheap —
+// no re-render of the grid) so zoom in/out feels instant. photoPreviewZoomMult
+// is a multiplier on top of "fit the whole chart in the visible width".
+function applyPhotoPreviewZoomStyle() {
+  const gcanvas = document.getElementById('photo-grid-preview-canvas');
+  const wrap = document.getElementById('photo-grid-preview-wrap');
+  if (!gcanvas.width || !gcanvas.height || !wrap.clientWidth) return;
+  const fitScale = wrap.clientWidth / gcanvas.width;
+  const scale = fitScale * photoPreviewZoomMult;
+  gcanvas.style.width  = Math.round(gcanvas.width * scale) + 'px';
+  gcanvas.style.height = Math.round(gcanvas.height * scale) + 'px';
+}
+
+document.getElementById('btn-photo-zoom-in').addEventListener('click', () => {
+  photoPreviewZoomMult = Math.min(6, photoPreviewZoomMult * 1.3);
+  applyPhotoPreviewZoomStyle();
+});
+document.getElementById('btn-photo-zoom-out').addEventListener('click', () => {
+  photoPreviewZoomMult = Math.max(0.25, photoPreviewZoomMult / 1.3);
+  applyPhotoPreviewZoomStyle();
+});
+document.getElementById('btn-photo-zoom-fit').addEventListener('click', () => {
+  photoPreviewZoomMult = 1;
+  applyPhotoPreviewZoomStyle();
+});
 
 // Step 2: dimensions + the real stitch-chart preview (reads the tone
 // settings from step 1's still-live controls, just not shown on screen)
@@ -1503,11 +1775,14 @@ function renderPhotoChartPreview() {
       gctx.fillRect(c * cs, r * cs, cs, cs);
     }
   }
+  applyPhotoPreviewZoomStyle();
 
   const dcCount = photoPendingResult.cells.reduce((acc, row) => acc + row.filter(v => v === 1 || v === 3).length, 0);
   document.getElementById('photo-stats').textContent =
     `${rows} rows × ${cols} stitches — ${dcCount.toLocaleString()} double crochet (${Math.round(100 * dcCount / (rows * cols))}%)`;
 }
+
+window.addEventListener('resize', () => { if (photoPendingResult) applyPhotoPreviewZoomStyle(); });
 
 ['photo-cols', 'photo-rows'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderPhotoChartPreview);
