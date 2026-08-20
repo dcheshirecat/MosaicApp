@@ -1290,31 +1290,41 @@ function renderChartGrid(p) {
   // shifts underneath you with every stitch.
   const windowed = settings.windowedView;
   let cs, colStart, colEnd;
+
+  // Always clear any inline CSS size first so neither mode inherits
+  // stale values from the other.
+  canvas.style.width  = '';
+  canvas.style.height = '';
+
   if (windowed) {
+    // Windowed mode: show exactly winSize columns centred on the current
+    // decade (stitches 1-10, 11-20, …).  Cell size fills the available
+    // wrap width so the window always occupies the full panel.
     const winSize = Math.min(settings.windowSize || STITCH_WINDOW, g.cols);
     const groupIdx = Math.floor((p.currentStitch - 1) / winSize);
     const stitchLo = groupIdx * winSize + 1;
     const stitchHi = Math.min(g.cols, stitchLo + winSize - 1);
-    // stitch 1 = rightmost column (g.cols - 1), stitch N = leftmost (0)
+    // stitch 1 = rightmost canvas column (g.cols-1), stitch N = leftmost (0)
     colStart = g.cols - stitchHi;
     colEnd   = g.cols - stitchLo + 1;
-    // Fill the wrap width with exactly winSize cells. Use offsetWidth which
-    // is reliable even before layout settles; fall back to 320.
-    const availW = wrap.offsetWidth || wrap.clientWidth || 320;
+    // Use getBoundingClientRect for a reliable pixel width even before scroll
+    const availW = wrap.getBoundingClientRect().width || wrap.offsetWidth || 300;
     cs = Math.max(6, Math.floor(availW / winSize));
+    // Pin the canvas CSS size so the browser never scales it
+    const canvasW = (colEnd - colStart) * cs;
+    const canvasH = g.rows * cs;
+    canvas.style.width  = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
   } else {
+    // Full mode: show all columns at gridCellSize px per cell.
+    // No inline CSS — let the canvas render at natural size.
     cs = gridCellSize;
     colStart = 0;
     colEnd = g.cols;
   }
 
-  const canvasW = (colEnd - colStart) * cs;
-  const canvasH = g.rows * cs;
-  canvas.width  = canvasW;
-  canvas.height = canvasH;
-  // Explicitly set CSS size so the canvas is never CSS-scaled by the browser
-  canvas.style.width  = canvasW + 'px';
-  canvas.style.height = canvasH + 'px';
+  canvas.width  = (colEnd - colStart) * cs;
+  canvas.height = g.rows * cs;
   const ctx = canvas.getContext('2d');
 
   const symbol = p.adcSymbol || '⚓';
@@ -1463,13 +1473,6 @@ function renderChartGrid(p) {
       ctx.lineWidth = 3;
       ctx.strokeRect((curColIndex - colStart) * cs + 1, curRowIndexFromTop * cs + 1, cs - 2, cs - 2);
     }
-  }
-
-  // Reset CSS size in non-windowed mode so previous windowed inline styles
-  // don't stretch the canvas when switching back to full view.
-  if (!windowed) {
-    canvas.style.width  = '';
-    canvas.style.height = '';
   }
 
   canvas.onclick = fixChartMode ? (e) => {
@@ -1672,21 +1675,25 @@ document.getElementById('chart-grid-wrap').addEventListener('scroll', (e) => {
 
 
 document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
   if (settings.windowedView) {
-    settings.windowSize = Math.max(4, settings.windowSize - 2);
+    // Fewer stitches in the window = bigger cells = zoom in
+    settings.windowSize = Math.max(4, (settings.windowSize || STITCH_WINDOW) - 2);
     saveSettings();
   } else {
-    gridCellSize = Math.min(28, gridCellSize + 2);
+    gridCellSize = Math.min(40, gridCellSize + 2);
   }
-  const p = getProject(activeId); if (p) renderChartGrid(p);
+  renderChartGrid(p);
 });
 document.getElementById('btn-zoom-out').addEventListener('click', () => {
   const p = getProject(activeId); if (!p) return;
   if (settings.windowedView) {
-    settings.windowSize = Math.min(p.chartGrid.cols, settings.windowSize + 2);
+    // More stitches in the window = smaller cells = zoom out
+    const maxCols = (p.chartGrid && p.chartGrid.cols) || 999;
+    settings.windowSize = Math.min(maxCols, (settings.windowSize || STITCH_WINDOW) + 2);
     saveSettings();
   } else {
-    gridCellSize = Math.max(2, gridCellSize - 2); // zoom out further to see overall progress
+    gridCellSize = Math.max(2, gridCellSize - 2);
   }
   renderChartGrid(p);
 });
@@ -1897,6 +1904,11 @@ document.getElementById('btn-legend').addEventListener('click', () => {
 
 document.getElementById('btn-window-view').addEventListener('click', () => {
   settings.windowedView = !settings.windowedView;
+  if (settings.windowedView) {
+    // Always start windowed mode showing exactly 10 stitches so the user
+    // gets a clean decade view regardless of previous zoom adjustments.
+    settings.windowSize = STITCH_WINDOW;
+  }
   saveSettings();
   syncWindowViewUI();
   const p = getProject(activeId); if (p) renderChartGrid(p);
