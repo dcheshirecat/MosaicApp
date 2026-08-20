@@ -153,6 +153,9 @@
   .counter-btns button { width: 38px; height: 38px; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .btn-minus { background: var(--border); color: var(--text); }
   .btn-plus { background: var(--accent); color: #fff; }
+  .counter-jump-btns { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+  .counter-jump-btns button { min-width: 44px; height: 26px; padding: 0 8px; border-radius: 13px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+  .counter-jump-btns button:active { background: var(--border); color: var(--text); }
 
   /* chart */
   #chart-section { background: var(--card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
@@ -445,6 +448,11 @@
     <input type="range" id="photo-threshold" min="0" max="255" value="128">
   </div>
 
+  <div class="slider-row">
+    <div class="slider-row-head"><label style="margin-bottom:0">Contrast</label><span class="slider-val" id="photo-contrast-val">0</span></div>
+    <input type="range" id="photo-contrast" min="-100" max="100" value="0">
+  </div>
+
   <div class="form-group">
     <label class="toggle-label" for="photo-invert">
       <input type="checkbox" id="photo-invert">
@@ -535,6 +543,10 @@
       <div class="counter-btns">
         <button class="btn-minus" id="stitch-minus">−</button>
         <button class="btn-plus" id="stitch-plus">+</button>
+      </div>
+      <div class="counter-jump-btns">
+        <button id="stitch-jump-minus" title="Jump to previous group of 10">−10</button>
+        <button id="stitch-jump-plus" title="Jump to next group of 10">+10</button>
       </div>
     </div>
   </div>
@@ -1392,6 +1404,7 @@ function openPhotoBwScreen() {
   refreshPhotoWorkingData();
 
   document.getElementById('photo-threshold').value = 128;
+  document.getElementById('photo-contrast').value = 0;
   document.getElementById('photo-invert').checked = false;
   document.getElementById('photo-dither').checked = true;
 
@@ -1602,16 +1615,20 @@ document.getElementById('btn-photo-reset').addEventListener('click', () => {
 function renderPhotoBwPreview() {
   if (!photoGray) return;
   const threshold = parseInt(document.getElementById('photo-threshold').value);
+  const contrast = parseInt(document.getElementById('photo-contrast').value);
   const invert = document.getElementById('photo-invert').checked;
   const dither = document.getElementById('photo-dither').checked;
   document.getElementById('photo-threshold-val').textContent = threshold;
+  document.getElementById('photo-contrast-val').textContent = contrast;
 
   // preview at the cached working resolution — dimensions/downsampling for
   // the actual stitch grid happen in step 2
   const gw = photoGray.w, gh = photoGray.h;
+  const adjusted = applyContrast(photoGray, contrast);
+  adjusted.w = gw; adjusted.h = gh;
   const bin = dither
-    ? ditherToBinary(photoGray, gw, gh, threshold)
-    : thresholdToBinary(photoGray, gw, gh, threshold);
+    ? ditherToBinary(adjusted, gw, gh, threshold)
+    : thresholdToBinary(adjusted, gw, gh, threshold);
 
   const prev = document.getElementById('photo-preview-canvas');
   prev.width = gw; prev.height = gh;
@@ -1626,11 +1643,25 @@ function renderPhotoBwPreview() {
   prev.style.width = '100%';
   prev.style.height = 'auto';
 }
-['photo-threshold', 'photo-invert', 'photo-dither'].forEach(id => {
+['photo-threshold', 'photo-contrast', 'photo-invert', 'photo-dither'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderPhotoBwPreview);
 });
 
 document.getElementById('btn-photo-bw-cancel').addEventListener('click', () => showScreen('home'));
+
+// parseInt(...) || fallback is a trap here: parseInt('0') returns the
+// number 0, and 0 is falsy in JS, so "|| 100" was silently replacing a
+// genuine, deliberate 0 with the 100 default — the exact reason clearing
+// the rows/stitches fields to 0 looked "more accurate": it wasn't actually
+// building a 0-size grid, it was quietly discarding whatever custom values
+// were there and substituting the clean 100×100 default instead. This only
+// falls back on truly invalid (NaN) input, so a real 0 gets clamped to the
+// field's real minimum (10) like every other out-of-range value does.
+function parsePhotoDim(fieldId, min, max, fallback) {
+  const parsed = parseInt(document.getElementById(fieldId).value);
+  const v = Number.isNaN(parsed) ? fallback : parsed;
+  return Math.max(min, Math.min(max, v));
+}
 
 document.getElementById('btn-photo-continue').addEventListener('click', () => {
   if (!photoGray) { toast('Upload a photo first'); return; }
@@ -1666,14 +1697,28 @@ function downsamplePhotoToGrid(cols, rows) {
 // — dithering at the final stitch resolution (not the original photo
 // resolution) is what gives low stitch-counts believable shading instead
 // of flat blocky tone bands.
+//
+// IMPORTANT: error-diffusion dithering conserves brightness — every pixel's
+// rounding error gets pushed 100% onto its neighbors rather than discarded,
+// so the long-run proportion of light-vs-dark output pixels always tracks
+// the source image's actual average tone, almost regardless of what
+// threshold value the per-pixel comparison uses. That made the threshold
+// slider look like it did nothing whenever dithering was on (the default).
+// The fix: treat `threshold` as an exposure shift applied to the gray
+// values BEFORE dithering, then always dither against a fixed 128 midpoint.
+// That actually shifts the source brightness dithering is conserving, so
+// raising the threshold visibly darkens the result (more area reads as
+// Color B) and lowering it visibly lightens it (more area reads as Color A).
 function ditherToBinary(gray, cols, rows, threshold) {
-  const g = Float32Array.from(gray);
+  const bias = threshold - 128;
+  const g = new Float32Array(cols * rows);
+  for (let i = 0; i < g.length; i++) g[i] = Math.max(0, Math.min(255, gray[i] - bias));
   const bin = new Uint8Array(cols * rows); // 1 = light (Color A side), 0 = dark
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const i = r * cols + c;
       const old = g[i];
-      const isLight = old >= threshold;
+      const isLight = old >= 128;
       bin[i] = isLight ? 1 : 0;
       const err = old - (isLight ? 255 : 0);
       if (c + 1 < cols) g[i + 1] += err * 7 / 16;
@@ -1691,27 +1736,74 @@ function thresholdToBinary(gray, cols, rows, threshold) {
   for (let i = 0; i < cols * rows; i++) bin[i] = gray[i] >= threshold ? 1 : 0;
   return bin;
 }
+// Contrast stretches/compresses gray values around the middle (128) before
+// thresholding or dithering. contrast is a -100..100 slider value:
+// 0 = untouched, +100 = pure black/white (steep), -100 = flattened toward
+// mid-gray. Kept as its own step (not folded into the threshold bias above)
+// so the two controls do genuinely different things: threshold moves WHERE
+// the light/dark line falls, contrast changes HOW SHARPLY the image
+// separates into two tones on either side of that line.
+function applyContrast(gray, contrast) {
+  const factor = (259 * (contrast * 2.55 + 255)) / (255 * (259 - contrast * 2.55));
+  const out = new Float32Array(gray.length);
+  for (let i = 0; i < gray.length; i++) {
+    out[i] = Math.max(0, Math.min(255, factor * (gray[i] - 128) + 128));
+  }
+  return out;
+}
 
-// Builds the actual cell grid using the real overlay-crochet rule: row
-// band alternates A/B every row; a cell is double crochet exactly when
-// the photo's tone at that position needs the OTHER color to show.
+// Builds the actual cell grid using the real overlay-crochet rule. Each// row's own color-bit is its NATIVE working yarn (alternates strictly by
+// row parity — never chosen based on the photo), and a dc flag means THIS
+// row spikes down to cover the row directly below it (array index r+1,
+// i.e. row-number − 1) with its own color. A cell's displayed color is
+// therefore its own row's color unless the row above it (r−1) has a dc
+// there — never a comparison against its own desired picture color, which
+// would be asking a row to somehow recolor itself rather than the row
+// below it.
+//
+// This matters for two concrete reasons:
+// 1. Row 1 (the very first row, worked right off the foundation chain) has
+//    no row below it to spike into — only the chain, which isn't a real
+//    stitch row — so it can never carry a dc. It must always be plain
+//    single crochet in its native color (color A, since odd row numbers
+//    are always the A band), regardless of what the photo wants there.
+// 2. The topmost row (highest row number) has no row above it to cover it,
+//    so it always shows its own native color too — the very top edge of
+//    a photo-derived chart can't carry picture detail, which is a real
+//    limitation of the technique, not a bug.
 function buildOverlayChartFromBinary(bin, cols, rows, invert) {
-  const cells = [];
-  const rowBand = [];
+  // desired[r][c] = the picture color the photo wants visible at (row r, col c)
+  const desired = new Array(rows);
   for (let r = 0; r < rows; r++) {
-    const rowNumber = rows - r; // r=0 is the visual top = highest row number
-    const band = (rowNumber % 2 === 1) ? 'A' : 'B';
-    rowBand.push(band);
     const rowArr = new Array(cols);
     for (let c = 0; c < cols; c++) {
       let isLight = !!bin[r * cols + c];
       if (invert) isLight = !isLight;
-      const pictureColor = isLight ? 'A' : 'B';
-      const isB = pictureColor === 'B';
-      const dc = pictureColor !== band;
-      rowArr[c] = (isB ? 2 : 0) + (dc ? 1 : 0);
+      rowArr[c] = isLight ? 'A' : 'B';
     }
-    cells.push(rowArr);
+    desired[r] = rowArr;
+  }
+
+  const rowBand = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    const rowNumber = rows - r; // r=0 is the visual top = highest row number
+    rowBand[r] = (rowNumber % 2 === 1) ? 'A' : 'B';
+  }
+
+  const cells = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    const band = rowBand[r];
+    const base = band === 'B' ? 2 : 0;
+    const belowR = r + 1; // canvas index of the row physically below (rowNumber − 1)
+    const rowArr = new Array(cols);
+    for (let c = 0; c < cols; c++) {
+      // dc here means: does the row below need THIS row's color to show?
+      // When belowR is out of range, "below" is the foundation chain, not
+      // a real row — no dc is possible there, so row 1 stays plain.
+      const dc = belowR < rows && desired[belowR][c] === band;
+      rowArr[c] = base + (dc ? 1 : 0);
+    }
+    cells[r] = rowArr;
   }
   return { rows, cols, cells, rowBand };
 }
@@ -1749,14 +1841,16 @@ document.getElementById('btn-photo-zoom-fit').addEventListener('click', () => {
 // settings from step 1's still-live controls, just not shown on screen)
 function renderPhotoChartPreview() {
   if (!photoGray) return;
-  const cols = Math.max(10, Math.min(300, parseInt(document.getElementById('photo-cols').value) || 100));
-  const rows = Math.max(10, Math.min(400, parseInt(document.getElementById('photo-rows').value) || 100));
+  const cols = parsePhotoDim('photo-cols', 10, 300, 100);
+  const rows = parsePhotoDim('photo-rows', 10, 400, 100);
   const threshold = parseInt(document.getElementById('photo-threshold').value);
+  const contrast = parseInt(document.getElementById('photo-contrast').value);
   const invert = document.getElementById('photo-invert').checked;
   const dither = document.getElementById('photo-dither').checked;
 
   const grayGrid = downsamplePhotoToGrid(cols, rows);
-  const bin = dither ? ditherToBinary(grayGrid, cols, rows, threshold) : thresholdToBinary(grayGrid, cols, rows, threshold);
+  const adjustedGrid = applyContrast(grayGrid, contrast);
+  const bin = dither ? ditherToBinary(adjustedGrid, cols, rows, threshold) : thresholdToBinary(adjustedGrid, cols, rows, threshold);
 
   photoPendingResult = buildOverlayChartFromBinary(bin, cols, rows, invert);
 
@@ -1768,9 +1862,19 @@ function renderPhotoChartPreview() {
   const cs = Math.max(3, Math.min(12, Math.floor(600 / cols)));
   gcanvas.width = cols * cs; gcanvas.height = rows * cs;
   const gctx = gcanvas.getContext('2d');
+  const pcells = photoPendingResult.cells;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const code = photoPendingResult.cells[r][c];
+      // This preview is meant to show what the FINISHED piece will look
+      // like, not the raw working-yarn stripes — so it needs the same
+      // derivation the tracker's pattern view uses: a cell shows its own
+      // row's color, unless the row above it (r−1, worked later) has a dc
+      // there, in which case that spike's color covers it instead.
+      let code = pcells[r][c];
+      if (r > 0) {
+        const above = pcells[r - 1][c];
+        if (above === 1 || above === 3) code = above;
+      }
       gctx.fillStyle = (code === 2 || code === 3) ? colorBHex : colorAHex;
       gctx.fillRect(c * cs, r * cs, cs, cs);
     }
@@ -1788,7 +1892,7 @@ window.addEventListener('resize', () => { if (photoPendingResult) applyPhotoPrev
   document.getElementById(id).addEventListener('input', renderPhotoChartPreview);
 });
 document.getElementById('btn-photo-match-aspect').addEventListener('click', () => {
-  const cols = Math.max(10, Math.min(300, parseInt(document.getElementById('photo-cols').value) || 100));
+  const cols = parsePhotoDim('photo-cols', 10, 300, 100);
   // typical crochet single-crochet gauge is somewhat taller than wide per
   // stitch, so rows-per-column needs a small correction beyond the photo's
   // raw pixel aspect ratio to look right worked up
@@ -1828,6 +1932,9 @@ document.getElementById('btn-photo-create-project').addEventListener('click', as
 function openTracker(id) {
   activeId = id;
   fixChartMode = false;
+  patternView = false; // always open into working-yarn mode — pattern view
+                        // is an on-demand preview, not the default state
+  document.getElementById('btn-pattern-view').classList.remove('active');
   document.getElementById('chart-legend-pop').classList.remove('open');
   renderTracker();
   showScreen('tracker');
@@ -2538,6 +2645,24 @@ document.getElementById('stitch-plus').addEventListener('click', () => {
 document.getElementById('stitch-minus').addEventListener('click', () => {
   const p = getProject(activeId); if (!p) return;
   if (p.currentStitch > 1) { p.currentStitch--; saveAll(); renderTracker(); }
+  else toast('Already at stitch 1');
+});
+// Jump by a full group of 10, landing on round numbers (10, 20, 30…) rather
+// than just adding/subtracting 10 from wherever you happen to be — this is
+// what makes it actually useful for lining up with the "10 stitches at a
+// time" windowed chart view. The regular ± buttons above are untouched, so
+// moving one stitch at a time to accurately log progress still works
+// exactly as before; this is purely an additional way to get around faster.
+document.getElementById('stitch-jump-plus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  const next = Math.min(p.stitches, Math.floor(p.currentStitch / 10) * 10 + 10);
+  if (next > p.currentStitch) { p.currentStitch = next; saveAll(); renderTracker(); }
+  else toast('Last stitch in row!');
+});
+document.getElementById('stitch-jump-minus').addEventListener('click', () => {
+  const p = getProject(activeId); if (!p) return;
+  const prev = Math.max(1, (Math.ceil(p.currentStitch / 10) - 1) * 10);
+  if (prev < p.currentStitch) { p.currentStitch = prev; saveAll(); renderTracker(); }
   else toast('Already at stitch 1');
 });
 
