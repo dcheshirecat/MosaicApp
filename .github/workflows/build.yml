@@ -26,8 +26,21 @@ jobs:
 
       - name: Install Android SDK Platform 35
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          set -e
+          SDKMANAGER=""
+          for CAND in \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            $(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" -maxdepth 4 -type f -name sdkmanager 2>/dev/null); do
+            if [ -x "$CAND" ]; then SDKMANAGER="$CAND"; break; fi
+          done
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Could not locate sdkmanager under ANDROID_HOME ($ANDROID_HOME) or ANDROID_SDK_ROOT ($ANDROID_SDK_ROOT)"
+            exit 1
+          fi
+          echo "Using sdkmanager at: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Scaffold Android project
         run: |
