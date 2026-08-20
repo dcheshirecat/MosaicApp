@@ -933,21 +933,37 @@ document.getElementById('btn-cancel-form').addEventListener('click', () => {
 });
 document.getElementById('btn-new').addEventListener('click', () => openForm(null));
 
-// ── PDF IMPORT (text-layer grid parser) ─────────────────────────────────
-// Stitch Fiddle PDFs encode every cell as a text glyph:
-//   $ / % = Color A / B row marker (not a stitch — just identifies row color)
-//   " / # = border stitch (first and last stitch of each row, always SC)
-//   !     = double crochet / overlay stitch (the X mark)
-//   space = single crochet (background)
-//   &     = foundation chain (row 0)
-// Cell codes: 0=A+SC, 1=A+DC, 2=B+SC, 3=B+DC
+// ── PDF IMPORT (operator-list glyph parser) ─────────────────────────────
+// Stitch Fiddle PDFs encode every cell as a text glyph, with each row's
+// color set independently at the row level (not per cell):
+//   $ / % = Color A / B row marker — sets THIS ROW'S working color; every
+//           cell in the row shares it (mosaic rows are worked in one
+//           color start to finish, never mixed cell-by-cell).
+//   !     = double crochet / overlay ("spike") stitch, drawn on a dark row
+//   space = the SAME double-crochet stitch, drawn on a light row (a
+//           separate glyph purely so the mark is visible against either
+//           background — both mean exactly the same thing: "spike here")
+//   (no glyph at all) = plain single crochet
+//   &     = foundation chain (row 0 — not a real pattern row, skipped)
 //
-// The parser groups all text items by Y baseline, finds the left color
-// marker ($ or %) for each row, then maps every ! to its column using the
-// item's X coordinate.  It deliberately handles both "combined" emission
-// (the whole row in one text item) and "split" emission (each character as
-// a separate item), which varies across pdf.js versions and Stitch Fiddle
-// export options.
+// Color and stitch-type are two independent signals and must never be
+// derived from one another: cell code 0=A/sc 1=A/dc 2=B/sc 3=B/dc, where
+// the 0/2 vs 1/3 split comes only from the row's own $/% marker, and the
+// dc bit comes only from glyph presence — checking for BOTH ' ' and '!'
+// is required, or every double-crochet on a Color-A row is silently
+// missed (undercounting DC by roughly half and making it look like "X
+// only ever appears on Color B").
+//
+// This reads the PDF via page.getOperatorList()'s raw text operators
+// (beginText/moveText/showText) instead of getTextContent(). getTextContent
+// merges nearby glyphs using its own spacing heuristics and can insert
+// characters that were never in the PDF (e.g. turning "$\"" into "$ \""),
+// which corrupts a chart this dense. showText's glyph objects give the
+// already-decoded Unicode character with an exact position from the
+// preceding moveText — no reconstruction, so no synthetic spacing. This
+// also avoids constructPath's fill-color path entirely (an internal
+// pdf.js representation that has changed across versions) since row
+// color only ever needs the $/% text glyph, never a filled rectangle.
 
 async function startPdfTextImport(file) {
   const ok = await pdfjsReady;
@@ -963,33 +979,29 @@ async function startPdfTextImport(file) {
     const buf = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buf }).promise;
 
-    const pageItems = [];
+    let best = null;
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const page = await doc.getPage(pn);
-      // disableCombineTextItems keeps each of pdf.js's own text-showing
-      // operations as a separate item instead of merging adjacent ones —
-      // more, smaller items give the column-placement fix below more
-      // accurate item.width values to work with.
-      const tc = await page.getTextContent({ includeMarkedContent: false, disableCombineTextItems: true });
-      pageItems.push(tc.items);
+      const opList = await page.getOperatorList();
+      const result = extractStitchFiddleGlyphGrid(opList, pdfjsLib.OPS);
+      if (result && (!best || result.rows * result.cols > best.rows * best.cols)) best = result;
     }
 
-    const result = parseStitchFiddlePdfItems(pageItems);
-    if (!result) {
+    if (!best || best.rows < 10 || best.cols < 10) {
       label.textContent = `Scanned ${doc.numPages} page${doc.numPages === 1 ? '' : 's'} — no Stitch Fiddle chart found`;
       area.className = '';
       toast('No Stitch Fiddle chart found in this PDF');
       return;
     }
 
-    document.getElementById('f-rows').value    = result.rows;
-    document.getElementById('f-stitches').value = result.cols;
-    pendingChartGrid   = { rows: result.rows, cols: result.cols, cells: result.cells, sourceRows: result.sourceRows };
+    document.getElementById('f-rows').value    = best.rows;
+    document.getElementById('f-stitches').value = best.cols;
+    pendingChartGrid   = { rows: best.rows, cols: best.cols, cells: best.cells };
     pendingChartSource = 'grid';
-    label.textContent  = `✓ ${file.name} — ${result.rows} rows × ${result.cols} sts`;
+    label.textContent  = `✓ ${file.name} — ${best.rows} rows × ${best.cols} sts`;
     area.className     = 'has-grid';
     setChartModeTab('pdf');
-    toast(`Chart imported: ${result.rows} rows × ${result.cols} stitches`);
+    toast(`Chart imported: ${best.rows} rows × ${best.cols} stitches`);
   } catch (err) {
     console.error('PDF import error', err);
     label.textContent = 'Error reading PDF: ' + (err && err.message ? err.message : String(err));
@@ -998,197 +1010,147 @@ async function startPdfTextImport(file) {
   }
 }
 
-function parseStitchFiddlePdfItems(pageItems) {
-  const pageCandidates = [];
+// Walks one page's raw operator list and returns { rows, cols, cells } or
+// null if this page isn't a Stitch Fiddle chart grid. cells[0] is the
+// topmost chart row on the page, cells[r][0] is the leftmost stitch.
+function extractStitchFiddleGlyphGrid(opList, OPS) {
+  const rev = {};
+  for (const k in OPS) rev[OPS[k]] = k;
 
-  for (let pageIndex = 0; pageIndex < pageItems.length; pageIndex++) {
-    const raw = pageItems[pageIndex] || [];
-    if (raw.length < 10) continue;
+  const glyphs = []; // { x, y, ch }
+  let inText = false, textX = null, textY = null;
 
-    const items = raw.map(it => ({
-      x:     +((it.transform && it.transform[4]) || 0),
-      y:     +((it.transform && it.transform[5]) || 0),
-      width: +(it.width || 0),
-      str:   String(it.str || '')
-    })).filter(it => it.str.trim().length > 0);
+  const fn = opList.fnArray, ar = opList.argsArray;
+  for (let i = 0; i < fn.length; i++) {
+    const name = rev[fn[i]];
+    const args = ar[i];
+    switch (name) {
+      case 'beginText': inText = true; textX = null; textY = null; break;
+      case 'endText': inText = false; break;
+      case 'moveText': if (inText) { textX = args[0]; textY = args[1]; } break;
+      case 'showText': {
+        if (!inText || textX == null) break;
+        const arr = args[0];
+        if (Array.isArray(arr) && arr.length) {
+          const g = arr[0];
+          const ch = g && g.unicode;
+          if (ch != null) glyphs.push({ x: textX, y: textY, ch });
+        }
+        break;
+      }
+      default: break;
+    }
+  }
+  if (glyphs.length < 200) return null;
 
-    if (items.length < 20) continue;
-
-    // ── 1. Group all items by Y baseline (±1.5 unit tolerance) ─────────────
-    items.sort((a, b) => a.y - b.y || a.x - b.x);
-    const yGroups = [];
-    for (const it of items) {
-      const last = yGroups.length ? yGroups[yGroups.length - 1] : null;
-      if (!last || Math.abs(last.y - it.y) > 1.5) {
-        yGroups.push({ y: it.y, items: [it] });
+  function clusterAxis(values, pitchHint) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    const bins = [];
+    for (const v of sorted) {
+      if (!bins.length || v - bins[bins.length - 1].sum / bins[bins.length - 1].n > pitchHint * 0.5) {
+        bins.push({ sum: v, n: 1 });
       } else {
-        last.items.push(it);
+        bins[bins.length - 1].sum += v; bins[bins.length - 1].n += 1;
       }
     }
-
-    // ── 2. Find chart row groups ────────────────────────────────────────────
-    // Each chart row has a $ or % as its leftmost significant item, sitting
-    // in the left ~45 % of the page.  The regex is intentionally single-char
-    // so it matches whether the PDF emits "$\"" as one combined item or as
-    // two separate items "$" and "\"".
-    const pageMaxX = Math.max(...items.map(it => it.x + (it.width || 0)));
-    const leftEdge = pageMaxX * 0.45;
-
-    const chartGroups = [];
-    for (const g of yGroups) {
-      const colorItem = g.items.find(it =>
-        (it.str[0] === '$' || it.str[0] === '%') && it.x < leftEdge
-      );
-      if (!colorItem) continue;
-      chartGroups.push({ y: g.y, colorItem, items: g.items });
+    return bins.map(b => b.sum / b.n);
+  }
+  function estimatePitch(values) {
+    const sorted = Array.from(new Set(values.map(v => Math.round(v * 100) / 100))).sort((a, b) => a - b);
+    const gaps = [];
+    for (let i = 1; i < sorted.length; i++) {
+      const d = sorted[i] - sorted[i - 1];
+      if (d > 0.3 && d < 20) gaps.push(d);
     }
-
-    if (chartGroups.length < 10) continue;
-
-    // ── 3. leftX — median X of color markers, and vertical row pitch ────────
-    const leftXArr = chartGroups.map(g => g.colorItem.x).sort((a, b) => a - b);
-    const leftX    = leftXArr[Math.floor(leftXArr.length / 2)];
-
-    const yArr  = chartGroups.map(g => g.y).sort((a, b) => a - b);
-    const yGaps = [];
-    for (let i = 1; i < yArr.length; i++) {
-      const d = yArr[i] - yArr[i - 1];
-      if (d > 0.3 && d < 20) yGaps.push(d);
-    }
-    yGaps.sort((a, b) => a - b);
-    const rowPitch = yGaps.length ? yGaps[Math.floor(yGaps.length / 2)] : null;
-    if (!rowPitch || !Number.isFinite(rowPitch) || rowPitch <= 0) continue;
-
-    // ── 4. Each row's own right-marker X position ───────────────────────────
-    // Used both to pin down cols and, more importantly, to calibrate each
-    // row's own horizontal pitch individually below.
-    function findRightMarkerX(g) {
-      for (let i = g.items.length - 1; i >= 0; i--) {
-        const s    = g.items[i].str;
-        const last = s[s.length - 1];
-        if ((last === '$' || last === '%') && g.items[i].x > g.colorItem.x + rowPitch * 10) {
-          return g.items[i].x;
-        }
-      }
-      return null;
-    }
-
-    // ── 5. Column count ───────────────────────────────────────────────────
-    // A glyph's own reported pixel width is its font advance width, which is
-    // NOT reliably the same as the fixed cell spacing the chart is laid out
-    // on ('!' and '$' are just different-shaped characters, even on a
-    // uniform grid) — that unreliable signal is what previously produced a
-    // stretched, drifting chart. The vertical spacing between rows doesn't
-    // have that problem at all (it has nothing to do with character glyphs),
-    // and Stitch Fiddle charts use square cells, so it's a much more
-    // trustworthy stand-in for the horizontal cell width. For every row,
-    // cols = round((rightMarkerX − leftMarkerX) / rowPitch) − 1; take
-    // whichever value the most rows agree on.
-    const colsVotes = new Map();
-    for (const g of chartGroups) {
-      const rightX = findRightMarkerX(g);
-      if (rightX === null) continue;
-      const est = Math.round((rightX - g.colorItem.x) / rowPitch) - 1;
-      if (est >= 10 && est <= 400) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
-    }
-    let cols = 186, bestVotes = 0; // 186 only used if voting fails entirely
-    for (const [est, votes] of colsVotes) {
-      if (votes > bestVotes) { bestVotes = votes; cols = est; }
-    }
-
-    // ── 6. Parse each row into a cells array ──────────────────────────────
-    // Each row's marks are placed using THAT row's own pitch, calibrated by
-    // interpolating between its own left and right markers (known to sit at
-    // physPos 0 and physPos cols+1). This is what keeps the picture crisp
-    // instead of drifting/stretching toward the right edge: a single global
-    // pitch, applied the same way to every row, lets any tiny per-row error
-    // compound across up to `cols` columns; per-row calibration can't drift
-    // because it's anchored at both ends of that specific row.
-    const candidates = [];
-    for (const g of chartGroups) {
-      const colorChar  = g.colorItem.str[0]; // '$' or '%'
-      const foundation = g.colorItem.str.startsWith('$&') ||
-        g.items.some(it => it.str.includes('&') && it.x > leftX && it.x < leftX + rowPitch * 3);
-
-      // Row number label: the digit-only item closest to leftX on its left
-      const labelItem = g.items
-        .filter(it => /^\d+$/.test(it.str.trim()) &&
-          it.x < leftX - rowPitch * 0.3 &&
-          it.x > leftX - rowPitch * 25)
-        .sort((a, b) => b.x - a.x)[0];
-      const sourceRow = labelItem ? parseInt(labelItem.str.trim(), 10) : null;
-
-      const rightX = findRightMarkerX(g);
-      const localPitch = rightX !== null ? (rightX - g.colorItem.x) / (cols + 1) : rowPitch;
-
-      const cells = new Array(cols).fill(colorChar === '$' ? 0 : 2);
-
-      for (const it of g.items) {
-        if (!it.str.includes('!')) continue;
-        if (it.x < leftX - localPitch * 1.5 || it.x > leftX + (cols + 3) * localPitch) continue;
-        if (it.str.length === 1) {
-          // disableCombineTextItems means this is the overwhelming majority
-          // of items: one glyph, one item, its position is exact — no
-          // interpolation needed or wanted.
-          const col = Math.round((it.x - g.colorItem.x) / localPitch) - 1;
-          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
-          continue;
-        }
-        // Rare fallback for any run pdf.js still merged into one item: use
-        // OUR calibrated localPitch (trusted — anchored to this row's own
-        // border markers) to work out the item's true physical span in
-        // pitch-steps, then place each found '!' proportionally by its
-        // position within the string. This is more robust than trusting
-        // the item's own width/str.length ratio, which is thrown off
-        // whenever pdf.js pads the string with synthetic spaces that don't
-        // correspond 1:1 with real skipped columns.
-        const impliedSteps = Math.max(1, Math.round(it.width / localPitch));
-        for (let i = 0; i < it.str.length; i++) {
-          if (it.str[i] !== '!') continue;
-          const frac = it.str.length > 1 ? i / (it.str.length - 1) : 0;
-          const charX = it.x + frac * impliedSteps * localPitch;
-          const col = Math.round((charX - g.colorItem.x) / localPitch) - 1;
-          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
-        }
-      }
-
-      candidates.push({ y: g.y, sourceRow, cells, colorChar, foundation });
-    }
-
-    if (candidates.length < 10) continue;
-
-    const uniqueNumbered = new Map();
-    for (const r of candidates) {
-      if (r.sourceRow !== null) uniqueNumbered.set(r.sourceRow, r);
-    }
-
-    pageCandidates.push({ pageIndex, candidates, uniqueNumbered, cols });
+    gaps.sort((a, b) => a - b);
+    return gaps.length ? gaps[Math.floor(gaps.length / 2)] : 2.37;
   }
 
-  if (!pageCandidates.length) return null;
+  // ── group glyphs into chart rows by Y ───────────────────────────────
+  const ys = glyphs.map(g => g.y);
+  const pitchY = estimatePitch(ys);
+  const rowCentersAsc = clusterAxis(ys, pitchY).sort((a, b) => a - b);
+  const nRows = rowCentersAsc.length;
+  function nearestBin(v, centers) {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < centers.length; i++) { const d = Math.abs(centers[i] - v); if (d < bd) { bd = d; bi = i; } }
+    return bi;
+  }
+  const rowGlyphs = Array.from({ length: nRows }, () => []);
+  for (const g of glyphs) rowGlyphs[nearestBin(g.y, rowCentersAsc)].push(g);
 
-  // Best page: most candidate rows
-  pageCandidates.sort((a, b) => b.candidates.length - a.candidates.length);
-  const best = pageCandidates[0];
-
-  let finalRows;
-  if (best.uniqueNumbered.size >= 10) {
-    // Sort descending by sourceRow: highest number = visual top = cells[0]
-    finalRows = Array.from(best.uniqueNumbered.values())
-      .sort((a, b) => b.sourceRow - a.sourceRow);
-  } else {
-    // Fallback: PDF Y increases upward, so higher Y = visual top (highest row)
-    finalRows = best.candidates.slice().sort((a, b) => b.y - a.y);
+  // ── column pitch: measured from the single DENSEST row's own internal
+  // consecutive-glyph gaps, never pooled across the whole page — pooling
+  // mixes in other text on the page (e.g. small ruler-number glyphs) at a
+  // different, contaminating spacing. One dense chart row's real
+  // adjacent-cell gaps are exact on their own. ─────────────────────────
+  let pitchX = 2.37;
+  {
+    let densest = null;
+    for (const rg of rowGlyphs) if (!densest || rg.length > densest.length) densest = rg;
+    if (densest && densest.length > 5) {
+      const xs = densest.slice().sort((a, b) => a.x - b.x).map(g => g.x);
+      const gaps = [];
+      for (let i = 1; i < xs.length; i++) {
+        const d = xs[i] - xs[i - 1];
+        if (d > 0.3 && d < 20) gaps.push(d);
+      }
+      gaps.sort((a, b) => a - b);
+      if (gaps.length) pitchX = gaps[Math.floor(gaps.length / 2)];
+    }
   }
 
-  if (finalRows.length < 10) return null;
+  // ── per row: find $/% marker (row color), chain flag ────────────────
+  const rowInfo = [];
+  for (let ri = 0; ri < nRows; ri++) {
+    const rg = rowGlyphs[ri].slice().sort((a, b) => a.x - b.x);
+    if (!rg.length) { rowInfo.push(null); continue; }
+    const marker = rg.find(g => g.ch === '$' || g.ch === '%');
+    if (!marker) { rowInfo.push(null); continue; }
+    const color = marker.ch === '$' ? 'A' : 'B';
+    const isChain = rg.some(g => g.ch === '&');
+    rowInfo.push({ markerX: marker.x, color, isChain, glyphs: rg });
+  }
 
-  return {
-    rows:       finalRows.length,
-    cols:       best.cols,
-    cells:      finalRows.map(r => r.cells),
-    sourceRows: finalRows.map(r => r.sourceRow)
-  };
+  // ── column count: right marker minus left marker, divided by pitch,
+  // voted across every row (border stitches count, outer $/% do not) ──
+  const colsVotes = new Map();
+  for (const info of rowInfo) {
+    if (!info || info.isChain) continue;
+    const g = info.glyphs;
+    let rightMarker = null;
+    for (let i = g.length - 1; i >= 0; i--) {
+      if ((g[i].ch === '$' || g[i].ch === '%') && g[i].x > info.markerX + pitchX * 10) { rightMarker = g[i]; break; }
+    }
+    if (!rightMarker) continue;
+    const est = Math.round((rightMarker.x - info.markerX) / pitchX) - 1;
+    if (est >= 10 && est <= 400) colsVotes.set(est, (colsVotes.get(est) || 0) + 1);
+  }
+  let cols = 0, bestVotes = 0;
+  for (const [est, votes] of colsVotes) if (votes > bestVotes) { bestVotes = votes; cols = est; }
+  if (!cols) return null;
+
+  // ── rows top-first (PDF y grows upward → descending y = top of page
+  // first), drop chain row(s) ──────────────────────────────────────────
+  const rowOrderTopFirst = [];
+  for (let i = 0; i < nRows; i++) if (rowInfo[i] && !rowInfo[i].isChain) rowOrderTopFirst.push(i);
+  rowOrderTopFirst.sort((a, b) => rowCentersAsc[b] - rowCentersAsc[a]);
+  if (rowOrderTopFirst.length < 10) return null;
+
+  const cells = [];
+  for (const ri of rowOrderTopFirst) {
+    const info = rowInfo[ri];
+    const baseCode = info.color === 'A' ? 0 : 2;
+    const row = new Array(cols).fill(baseCode);
+    for (const g of info.glyphs) {
+      if (g.ch !== ' ' && g.ch !== '!') continue; // both glyphs = same dc stitch
+      const col = Math.round((g.x - info.markerX) / pitchX) - 1;
+      if (col >= 0 && col < cols) row[col] = info.color === 'A' ? 1 : 3;
+    }
+    cells.push(row);
+  }
+
+  return { rows: cells.length, cols, cells };
 }
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
