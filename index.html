@@ -1281,16 +1281,23 @@ function renderChartGrid(p) {
   const curRowIndexFromTop = g.rows - p.currentRow;
   let curColIndex = g.cols - p.currentStitch; // stitch 1 = rightmost column
 
-  // In windowed mode we only draw a stitch-window-wide slice of columns,
-  // centered on the current stitch, and size cells to fill the screen
-  // width — this is the "N stitches at a time" view for wide charts.
+  // In windowed mode we only draw a stitch-window-wide slice of columns —
+  // this is the "N stitches at a time" view for wide charts. The window
+  // is aligned to fixed groups of N (stitches 1–10, 11–20, 21–30, …)
+  // rather than sliding to stay centered on the current stitch, so
+  // pressing the window button always shows and highlights the whole
+  // group you're actively working through, not a re-centered slice that
+  // shifts underneath you with every stitch.
   const windowed = settings.windowedView;
   let cs, colStart, colEnd;
   if (windowed) {
     const winSize = Math.min(settings.windowSize || STITCH_WINDOW, g.cols);
+    const groupIdx = Math.floor((p.currentStitch - 1) / winSize);
+    const stitchLo = groupIdx * winSize + 1;
+    const stitchHi = Math.min(g.cols, stitchLo + winSize - 1);
+    colStart = g.cols - stitchHi;       // stitch 1 = rightmost column
+    colEnd = g.cols - stitchLo + 1;
     cs = Math.max(4, Math.floor(wrap.clientWidth / winSize));
-    colStart = Math.max(0, Math.min(g.cols - winSize, curColIndex - Math.floor(winSize / 2)));
-    colEnd = colStart + winSize;
   } else {
     cs = gridCellSize;
     colStart = 0;
@@ -1433,13 +1440,16 @@ function renderChartGrid(p) {
     }
   }
 
-  // current row highlight
+  // current row highlight — when windowed, colStart/colEnd is exactly the
+  // aligned group-of-N block, so this border traces that whole group
+  // (fill untouched underneath, so the pattern stays fully visible).
   if (curRowIndexFromTop >= 0 && curRowIndexFromTop < g.rows) {
     ctx.strokeStyle = '#e94560';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, curRowIndexFromTop * cs + 1, (colEnd - colStart) * cs, cs - 2);
+    ctx.lineWidth = windowed ? 3 : 2;
+    ctx.strokeRect(1, curRowIndexFromTop * cs + 1, (colEnd - colStart) * cs - 2, cs - 2);
 
-    // current stitch highlight
+    // current stitch highlight (finer box pinpointing the exact stitch
+    // within the group)
     if (curColIndex >= colStart && curColIndex < colEnd) {
       ctx.lineWidth = 3;
       ctx.strokeRect((curColIndex - colStart) * cs + 1, curRowIndexFromTop * cs + 1, cs - 2, cs - 2);
@@ -1759,12 +1769,11 @@ function renderChart(p) {
 // ── STITCH MARKER ────────────────────────────────────────────────────────
 // An animated 📍 pin that drops at the current stitch position so you can
 // see at a glance exactly where you left off. Stored per-project.
-let stitchMarker = null; // { row, stitch } or null
-
 function renderStitchMarker(p, cs, colStart, colEnd) {
   const overlay = document.getElementById('stitch-marker-overlay');
   if (!overlay) return;
   overlay.innerHTML = '';
+  const stitchMarker = p.stitchMarker;
   if (!stitchMarker) return;
 
   const g = p.chartGrid;
@@ -1790,13 +1799,14 @@ function renderStitchMarker(p, cs, colStart, colEnd) {
 
 document.getElementById('btn-stitch-marker').addEventListener('click', () => {
   const p = getProject(activeId); if (!p) return;
-  if (stitchMarker && stitchMarker.row === p.currentRow && stitchMarker.stitch === p.currentStitch) {
-    stitchMarker = null;
+  if (p.stitchMarker && p.stitchMarker.row === p.currentRow && p.stitchMarker.stitch === p.currentStitch) {
+    p.stitchMarker = null;
     toast('Stitch marker removed');
   } else {
-    stitchMarker = { row: p.currentRow, stitch: p.currentStitch };
+    p.stitchMarker = { row: p.currentRow, stitch: p.currentStitch };
     toast(`Marker placed at Row ${p.currentRow}, St ${p.currentStitch}`);
   }
+  saveAll();
   renderTracker();
 });
 
