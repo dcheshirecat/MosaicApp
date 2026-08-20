@@ -1126,31 +1126,27 @@ function parseStitchFiddlePdfItems(pageItems) {
       for (const it of g.items) {
         if (!it.str.includes('!')) continue;
         if (it.x < leftX - localPitch * 1.5 || it.x > leftX + (cols + 3) * localPitch) continue;
-        // Position each character in this item using the ITEM'S OWN true
-        // physical span (it.width), not the global localPitch stepped by
-        // string index. Stitch Fiddle emits an entire run of marks (with
-        // real background gaps in between) as a single PDF text-showing
-        // operation; pdf.js's getTextContent() collapses those internal
-        // gaps down to a handful of synthetic space characters rather than
-        // one space per real skipped column, while it.width still
-        // correctly reports the TRUE start-to-end span (it's derived from
-        // the actual cursor advance, not from the string). Indexing by
-        // string position alone (the old approach) therefore bunched every
-        // '!' after the first gap much closer together than they really
-        // are — entire clusters collapsed into a dense block instead of
-        // being spread across the row, which is what was making imported
-        // charts look like solid stripes instead of the real picture.
-        // Rebuilding each character's position from it.width / it.str.length
-        // stretches the run back out across its true span and self-corrects
-        // for however many synthetic spaces pdf.js inserted.
-        const itemCharPitch = (it.str.length > 1 && it.width > 0)
-          ? it.width / it.str.length
-          : localPitch;
+        if (it.str.length === 1) {
+          // disableCombineTextItems means this is the overwhelming majority
+          // of items: one glyph, one item, its position is exact — no
+          // interpolation needed or wanted.
+          const col = Math.round((it.x - g.colorItem.x) / localPitch) - 1;
+          if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
+          continue;
+        }
+        // Rare fallback for any run pdf.js still merged into one item: use
+        // OUR calibrated localPitch (trusted — anchored to this row's own
+        // border markers) to work out the item's true physical span in
+        // pitch-steps, then place each found '!' proportionally by its
+        // position within the string. This is more robust than trusting
+        // the item's own width/str.length ratio, which is thrown off
+        // whenever pdf.js pads the string with synthetic spaces that don't
+        // correspond 1:1 with real skipped columns.
+        const impliedSteps = Math.max(1, Math.round(it.width / localPitch));
         for (let i = 0; i < it.str.length; i++) {
           if (it.str[i] !== '!') continue;
-          const charX = it.x + i * itemCharPitch;
-          // physPos 0 = $ color marker → col −1 (skipped)
-          // physPos 1 = first stitch   → col 0
+          const frac = it.str.length > 1 ? i / (it.str.length - 1) : 0;
+          const charX = it.x + frac * impliedSteps * localPitch;
           const col = Math.round((charX - g.colorItem.x) / localPitch) - 1;
           if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
         }
