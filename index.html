@@ -1855,12 +1855,21 @@ function renderTracker() {
 
   let col;
   if (isGrid) {
-    // Derive working color from the first cell of the current row —
-    // in overlay mosaic every cell in a row uses the same working color.
+    // The working yarn color for a row is independent of what the FINISHED
+    // picture looks like at any given cell — a row's picture can show
+    // either color depending on the photo/pattern, but the crocheter is
+    // still holding one single yarn color for that whole row. rowBand
+    // carries that real, independent signal (set for photo-designed
+    // charts). PDF-imported charts don't carry rowBand, so they fall back
+    // to the previous picture-cell-based estimate unchanged.
     const g2 = p.chartGrid;
     const ri = g2 ? g2.rows - p.currentRow : -1;
-    const firstCell = (g2 && ri >= 0 && ri < g2.rows) ? g2.cells[ri][0] : null;
-    col = (firstCell === 2 || firstCell === 3) ? 'B' : 'A';
+    if (g2 && g2.rowBand && ri >= 0 && ri < g2.rowBand.length) {
+      col = g2.rowBand[ri];
+    } else {
+      const firstCell = (g2 && ri >= 0 && ri < g2.rows) ? g2.cells[ri][0] : null;
+      col = (firstCell === 2 || firstCell === 3) ? 'B' : 'A';
+    }
   } else {
     col = activeColor(p.currentRow);
   }
