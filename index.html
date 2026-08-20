@@ -91,6 +91,28 @@
   .chart-mode-pane { display: none; }
   .chart-mode-pane.active { display: block; }
 
+  #photo-design-area { width: 100%; min-height: 70px; background: var(--card); border: 2px dashed var(--accent2); border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); font-size: 0.9rem; text-align: center; padding: 16px; }
+  #photo-design-area.has-grid { border-style: solid; border-color: var(--success); color: var(--success); }
+  #photo-design-file { display: none; }
+
+  /* photo-to-chart design screen */
+  #screen-photo-bw, #screen-photo-chart { padding: 16px; }
+  .photo-row { display: flex; gap: 12px; margin-bottom: 16px; }
+  .photo-col { flex: 1; min-width: 0; }
+  .photo-col-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  #photo-source-canvas, #photo-preview-canvas { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; display: block; }
+  .slider-row { margin-bottom: 14px; }
+  .slider-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .slider-row label { margin-bottom: 0; }
+  .slider-row input[type=range] { width: 100%; accent-color: var(--accent); }
+  .slider-val { font-size: 0.8rem; color: var(--text); font-variant-numeric: tabular-nums; }
+  .photo-dim-row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
+  .photo-dim-row .form-group { flex: 1; margin-bottom: 0; }
+  .photo-dim-row .btn-small { flex-shrink: 0; white-space: nowrap; }
+  #photo-grid-preview-wrap { width: 100%; overflow: auto; max-height: 45vh; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); margin-bottom: 16px; }
+  #photo-grid-preview-canvas { display: block; }
+  #photo-stats { font-size: 0.78rem; color: var(--muted); margin-bottom: 14px; text-align: center; }
+
   /* ADC symbol picker */
   .symbol-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .symbol-choice { width: 44px; height: 44px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); font-size: 1.3rem; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; }
@@ -201,6 +223,19 @@
   /* mosaic note */
   #mosaic-note { background: var(--surface); border-left: 3px solid var(--accent2); border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
   #mosaic-note strong { color: var(--text); }
+
+  /* home screen */
+  #home-hero { text-align: center; padding: 28px 12px 32px; }
+  #home-hero-icon { font-size: 2.6rem; margin-bottom: 10px; }
+  #home-hero-title { font-size: 1.5rem; font-weight: bold; font-style: italic; color: var(--accent); margin-bottom: 6px; }
+  #home-hero-sub { font-size: 0.88rem; color: var(--muted); line-height: 1.5; max-width: 320px; margin: 0 auto; }
+  .home-nav-card { width: 100%; display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; margin-bottom: 14px; cursor: pointer; text-align: left; font-family: inherit; color: var(--text); }
+  .home-nav-card:active { border-color: var(--accent); }
+  .home-nav-card-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .home-nav-card-text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .home-nav-card-title { font-size: 1.05rem; font-weight: bold; }
+  .home-nav-card-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+  .home-nav-card-arrow { font-size: 1.3rem; color: var(--muted); flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -211,7 +246,32 @@
   <button id="btn-settings" title="Settings">⚙️</button>
 </div>
 
-<div id="screen-list" class="screen active">
+<div id="screen-home" class="screen active">
+  <div id="home-hero">
+    <div id="home-hero-icon">🧶</div>
+    <div id="home-hero-title">Mosaic Tracker</div>
+    <div id="home-hero-sub">Track overlay-crochet charts, or design a brand new one.</div>
+  </div>
+  <button class="home-nav-card" id="btn-home-projects">
+    <span class="home-nav-card-icon">📋</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">My Projects</span>
+      <span class="home-nav-card-desc">Open an existing tracker or start a new one from a photo, image, or Stitch Fiddle PDF.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+  <button class="home-nav-card" id="btn-home-photo">
+    <span class="home-nav-card-icon">🖼️</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Design from Photo</span>
+      <span class="home-nav-card-desc">Turn any picture straight into a real overlay-crochet chart.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+  <input type="file" id="photo-design-file" accept="image/*" style="display:none">
+</div>
+
+<div id="screen-list" class="screen">
   <button id="btn-new">+ New Project</button>
   <div id="project-list"></div>
   <div id="empty-state">No projects yet.<br>Tap above to add your first blanket.</div>
@@ -345,6 +405,76 @@
   <button class="btn-primary" id="btn-save-project">Save Project</button>
   <button class="btn-secondary" id="btn-cancel-form">Cancel</button>
 </div>
+
+<div id="screen-photo-bw" class="screen">
+  <p class="section-title">Design from Photo — Step 1 of 2: Black &amp; White</p>
+
+  <div class="photo-row">
+    <div class="photo-col">
+      <div class="photo-col-label">Original</div>
+      <canvas id="photo-source-canvas"></canvas>
+    </div>
+    <div class="photo-col">
+      <div class="photo-col-label">Black &amp; white preview</div>
+      <canvas id="photo-preview-canvas"></canvas>
+    </div>
+  </div>
+
+  <div class="slider-row">
+    <div class="slider-row-head"><label style="margin-bottom:0">Threshold</label><span class="slider-val" id="photo-threshold-val">128</span></div>
+    <input type="range" id="photo-threshold" min="0" max="255" value="128">
+  </div>
+
+  <div class="form-group">
+    <label class="toggle-label" for="photo-invert">
+      <input type="checkbox" id="photo-invert">
+      <span>Invert (swap which tone is Color A / Color B)</span>
+    </label>
+  </div>
+  <div class="form-group">
+    <label class="toggle-label" for="photo-dither">
+      <input type="checkbox" id="photo-dither" checked>
+      <span>Dither (blends tones for more detail at low stitch counts)</span>
+    </label>
+  </div>
+  <div class="hint">Adjust until the black &amp; white preview looks right, then continue to turn it into a chart.</div>
+
+  <button class="btn-primary" id="btn-photo-continue">Continue →</button>
+  <button class="btn-secondary" id="btn-photo-bw-cancel">Cancel</button>
+</div>
+
+<div id="screen-photo-chart" class="screen">
+  <p class="section-title">Design from Photo — Step 2 of 2: Chart</p>
+
+  <div class="photo-dim-row">
+    <div class="form-group">
+      <label>Stitches per Row</label>
+      <input type="number" id="photo-cols" value="100" min="10" max="300">
+    </div>
+    <div class="form-group">
+      <label>Total Rows</label>
+      <input type="number" id="photo-rows" value="100" min="10" max="400">
+    </div>
+    <button type="button" class="btn-small" id="btn-photo-match-aspect">Match Photo</button>
+  </div>
+  <div class="hint">Dimensions are set automatically from your photo's proportions — adjust them here for a bigger or smaller finished piece.</div>
+
+  <div class="photo-col-label" style="margin-top:14px">Chart preview</div>
+  <div id="photo-grid-preview-wrap">
+    <canvas id="photo-grid-preview-canvas"></canvas>
+  </div>
+  <div id="photo-stats"></div>
+
+  <div class="form-group">
+    <label>Project Name</label>
+    <input type="text" id="photo-proj-name" placeholder="e.g. My Photo Blanket">
+  </div>
+  <div class="hint">Colors, the ADC symbol, and the reversible setting default to standard values — open Edit Project Settings afterward to fine-tune them.</div>
+
+  <button class="btn-primary" id="btn-photo-create-project">Looks Good — Create Project</button>
+  <button class="btn-secondary" id="btn-photo-chart-back">← Back</button>
+</div>
+
 
 <div id="screen-tracker" class="screen">
   <div id="tracker-header">
@@ -562,8 +692,8 @@ function getProject(id) { return projects.find(p => p.id === id); }
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
-  document.getElementById('nav-back').style.display = id === 'list' ? 'none' : 'block';
-  document.getElementById('btn-settings').style.display = id === 'list' ? 'block' : 'none';
+  document.getElementById('nav-back').style.display = id === 'home' ? 'none' : 'block';
+  document.getElementById('btn-settings').style.display = (id === 'home' || id === 'list') ? 'block' : 'none';
 }
 
 // ── PROJECT LIST ──────────────────────────────────────────────────────────
@@ -933,6 +1063,15 @@ document.getElementById('btn-cancel-form').addEventListener('click', () => {
 });
 document.getElementById('btn-new').addEventListener('click', () => openForm(null));
 
+document.getElementById('btn-home-projects').addEventListener('click', () => {
+  showScreen('list');
+  renderList();
+});
+document.getElementById('btn-home-photo').addEventListener('click', () => {
+  photoImg = null; photoGray = null; photoPendingResult = null;
+  document.getElementById('photo-design-file').click();
+});
+
 // ── PDF IMPORT (operator-list glyph parser) ─────────────────────────────
 // Stitch Fiddle PDFs encode every cell as a text glyph, with each row's
 // color set independently at the row level (not per cell):
@@ -1152,6 +1291,263 @@ function extractStitchFiddleGlyphGrid(opList, OPS) {
 
   return { rows: cells.length, cols, cells };
 }
+
+// ── DESIGN FROM PHOTO ────────────────────────────────────────────────────
+// Converts a photo into a real overlay-crochet chart. The row band still
+// alternates Color A / Color B every row exactly like a real Stitch Fiddle
+// export (odd row = A, even row = B), and a cell only needs a double
+// crochet spike where the photo's thresholded tone at that position
+// differs from the row's own working color — matching the same logic
+// verified against real Stitch Fiddle PDFs elsewhere in this app.
+let photoImg = null;
+let photoGray = null; // Float32Array, luminance 0-255, photoImg's natural size
+let photoNaturalW = 0, photoNaturalH = 0;
+
+document.getElementById('photo-design-file').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      photoImg = img;
+      photoNaturalW = img.naturalWidth;
+      photoNaturalH = img.naturalHeight;
+      openPhotoBwScreen();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+
+function openPhotoBwScreen() {
+  const src = document.getElementById('photo-source-canvas');
+  const maxW = 320;
+  const scale = Math.min(1, maxW / photoNaturalW);
+  src.width = Math.round(photoNaturalW * scale);
+  src.height = Math.round(photoNaturalH * scale);
+  const sctx = src.getContext('2d');
+  sctx.drawImage(photoImg, 0, 0, src.width, src.height);
+
+  // cache grayscale luminance at a moderate working resolution (cheap to
+  // resample from for any grid size the user picks later)
+  const workW = Math.min(400, photoNaturalW);
+  const workH = Math.round(workW * photoNaturalH / photoNaturalW);
+  const work = document.createElement('canvas');
+  work.width = workW; work.height = workH;
+  const wctx = work.getContext('2d');
+  wctx.drawImage(photoImg, 0, 0, workW, workH);
+  const data = wctx.getImageData(0, 0, workW, workH).data;
+  photoGray = new Float32Array(workW * workH);
+  for (let i = 0; i < workW * workH; i++) {
+    const o = i * 4;
+    photoGray[i] = 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2];
+  }
+  photoGray.w = workW; photoGray.h = workH;
+
+  document.getElementById('photo-threshold').value = 128;
+  document.getElementById('photo-invert').checked = false;
+  document.getElementById('photo-dither').checked = true;
+
+  showScreen('photo-bw');
+  renderPhotoBwPreview();
+}
+
+// Step 1: just the black & white tone preview — no chart/dimension logic
+// yet, so the user can focus purely on getting the two-tone image right.
+function renderPhotoBwPreview() {
+  if (!photoGray) return;
+  const threshold = parseInt(document.getElementById('photo-threshold').value);
+  const invert = document.getElementById('photo-invert').checked;
+  const dither = document.getElementById('photo-dither').checked;
+  document.getElementById('photo-threshold-val').textContent = threshold;
+
+  // preview at the cached working resolution — dimensions/downsampling for
+  // the actual stitch grid happen in step 2
+  const gw = photoGray.w, gh = photoGray.h;
+  const bin = dither
+    ? ditherToBinary(photoGray, gw, gh, threshold)
+    : thresholdToBinary(photoGray, gw, gh, threshold);
+
+  const prev = document.getElementById('photo-preview-canvas');
+  prev.width = gw; prev.height = gh;
+  const pctx = prev.getContext('2d');
+  const imgData = pctx.createImageData(gw, gh);
+  for (let i = 0; i < gw * gh; i++) {
+    let light = !!bin[i]; if (invert) light = !light;
+    const v = light ? 255 : 0;
+    imgData.data[i * 4] = v; imgData.data[i * 4 + 1] = v; imgData.data[i * 4 + 2] = v; imgData.data[i * 4 + 3] = 255;
+  }
+  pctx.putImageData(imgData, 0, 0);
+  prev.style.width = '100%';
+  prev.style.height = 'auto';
+}
+['photo-threshold', 'photo-invert', 'photo-dither'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderPhotoBwPreview);
+});
+
+document.getElementById('btn-photo-bw-cancel').addEventListener('click', () => showScreen('home'));
+
+document.getElementById('btn-photo-continue').addEventListener('click', () => {
+  if (!photoGray) { toast('Upload a photo first'); return; }
+  // automatic dimensions from the photo's own proportions — the user can
+  // still adjust these on the next step
+  const cols = 100;
+  const rows = Math.round(cols * (photoNaturalH / photoNaturalW) * 1.4);
+  document.getElementById('photo-cols').value = cols;
+  document.getElementById('photo-rows').value = Math.max(10, Math.min(400, rows));
+  showScreen('photo-chart');
+  renderPhotoChartPreview();
+});
+
+// downsamples the cached grayscale into a cols×rows grid via simple area
+// averaging (box filter) — much cleaner than nearest-neighbor for photos
+function downsamplePhotoToGrid(cols, rows) {
+  const gw = photoGray.w, gh = photoGray.h;
+  const out = new Float32Array(cols * rows);
+  for (let r = 0; r < rows; r++) {
+    const y0 = Math.floor(r * gh / rows), y1 = Math.max(y0 + 1, Math.floor((r + 1) * gh / rows));
+    for (let c = 0; c < cols; c++) {
+      const x0 = Math.floor(c * gw / cols), x1 = Math.max(x0 + 1, Math.floor((c + 1) * gw / cols));
+      let sum = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { sum += photoGray[y * gw + x]; n++; }
+      out[r * cols + c] = n ? sum / n : 255;
+    }
+  }
+  return out;
+}
+
+// Floyd–Steinberg error diffusion straight on the downsampled stitch grid
+// — dithering at the final stitch resolution (not the original photo
+// resolution) is what gives low stitch-counts believable shading instead
+// of flat blocky tone bands.
+function ditherToBinary(gray, cols, rows, threshold) {
+  const g = Float32Array.from(gray);
+  const bin = new Uint8Array(cols * rows); // 1 = light (Color A side), 0 = dark
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const old = g[i];
+      const isLight = old >= threshold;
+      bin[i] = isLight ? 1 : 0;
+      const err = old - (isLight ? 255 : 0);
+      if (c + 1 < cols) g[i + 1] += err * 7 / 16;
+      if (r + 1 < rows) {
+        if (c > 0) g[i + cols - 1] += err * 3 / 16;
+        g[i + cols] += err * 5 / 16;
+        if (c + 1 < cols) g[i + cols + 1] += err * 1 / 16;
+      }
+    }
+  }
+  return bin;
+}
+function thresholdToBinary(gray, cols, rows, threshold) {
+  const bin = new Uint8Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) bin[i] = gray[i] >= threshold ? 1 : 0;
+  return bin;
+}
+
+// Builds the actual cell grid using the real overlay-crochet rule: row
+// band alternates A/B every row; a cell is double crochet exactly when
+// the photo's tone at that position needs the OTHER color to show.
+function buildOverlayChartFromBinary(bin, cols, rows, invert) {
+  const cells = [];
+  const rowBand = [];
+  for (let r = 0; r < rows; r++) {
+    const rowNumber = rows - r; // r=0 is the visual top = highest row number
+    const band = (rowNumber % 2 === 1) ? 'A' : 'B';
+    rowBand.push(band);
+    const rowArr = new Array(cols);
+    for (let c = 0; c < cols; c++) {
+      let isLight = !!bin[r * cols + c];
+      if (invert) isLight = !isLight;
+      const pictureColor = isLight ? 'A' : 'B';
+      const isB = pictureColor === 'B';
+      const dc = pictureColor !== band;
+      rowArr[c] = (isB ? 2 : 0) + (dc ? 1 : 0);
+    }
+    cells.push(rowArr);
+  }
+  return { rows, cols, cells, rowBand };
+}
+
+let photoPendingResult = null;
+
+// Step 2: dimensions + the real stitch-chart preview (reads the tone
+// settings from step 1's still-live controls, just not shown on screen)
+function renderPhotoChartPreview() {
+  if (!photoGray) return;
+  const cols = Math.max(10, Math.min(300, parseInt(document.getElementById('photo-cols').value) || 100));
+  const rows = Math.max(10, Math.min(400, parseInt(document.getElementById('photo-rows').value) || 100));
+  const threshold = parseInt(document.getElementById('photo-threshold').value);
+  const invert = document.getElementById('photo-invert').checked;
+  const dither = document.getElementById('photo-dither').checked;
+
+  const grayGrid = downsamplePhotoToGrid(cols, rows);
+  const bin = dither ? ditherToBinary(grayGrid, cols, rows, threshold) : thresholdToBinary(grayGrid, cols, rows, threshold);
+
+  photoPendingResult = buildOverlayChartFromBinary(bin, cols, rows, invert);
+
+  // default preview colors (cream / dark navy) since no project colors
+  // exist yet at this point in the flow — the real colors are chosen
+  // after the project is created
+  const colorAHex = '#f5e6c8', colorBHex = '#2a3a5c';
+  const gcanvas = document.getElementById('photo-grid-preview-canvas');
+  const cs = Math.max(3, Math.min(12, Math.floor(600 / cols)));
+  gcanvas.width = cols * cs; gcanvas.height = rows * cs;
+  const gctx = gcanvas.getContext('2d');
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const code = photoPendingResult.cells[r][c];
+      gctx.fillStyle = (code === 2 || code === 3) ? colorBHex : colorAHex;
+      gctx.fillRect(c * cs, r * cs, cs, cs);
+    }
+  }
+
+  const dcCount = photoPendingResult.cells.reduce((acc, row) => acc + row.filter(v => v === 1 || v === 3).length, 0);
+  document.getElementById('photo-stats').textContent =
+    `${rows} rows × ${cols} stitches — ${dcCount.toLocaleString()} double crochet (${Math.round(100 * dcCount / (rows * cols))}%)`;
+}
+
+['photo-cols', 'photo-rows'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderPhotoChartPreview);
+});
+document.getElementById('btn-photo-match-aspect').addEventListener('click', () => {
+  const cols = Math.max(10, Math.min(300, parseInt(document.getElementById('photo-cols').value) || 100));
+  // typical crochet single-crochet gauge is somewhat taller than wide per
+  // stitch, so rows-per-column needs a small correction beyond the photo's
+  // raw pixel aspect ratio to look right worked up
+  const rows = Math.round(cols * (photoNaturalH / photoNaturalW) * 1.4);
+  document.getElementById('photo-rows').value = Math.max(10, Math.min(400, rows));
+  renderPhotoChartPreview();
+});
+
+document.getElementById('btn-photo-chart-back').addEventListener('click', () => {
+  showScreen('photo-bw');
+  renderPhotoBwPreview();
+});
+
+document.getElementById('btn-photo-create-project').addEventListener('click', async () => {
+  if (!photoPendingResult) { toast('Nothing to use yet'); return; }
+  const name = document.getElementById('photo-proj-name').value.trim() || 'Photo Design';
+
+  const p = {
+    id: uid(), name,
+    totalRows: photoPendingResult.rows, stitches: photoPendingResult.cols,
+    colorAName: 'Color A', colorAHex: '#f5e6c8',
+    colorBName: 'Color B', colorBHex: '#2a7f7f',
+    adcSymbol: '⚓', reversible: false,
+    chartImage: null,
+    chartGrid: { rows: photoPendingResult.rows, cols: photoPendingResult.cols, cells: photoPendingResult.cells, rowBand: photoPendingResult.rowBand },
+    chartSource: 'grid',
+    currentRow: 1, currentStitch: 1
+  };
+  projects.push(p);
+  await saveAll();
+  renderList();
+  showScreen('list');
+  toast(`"${name}" created — find it in your projects`);
+});
 
 // ── TRACKER ───────────────────────────────────────────────────────────────
 function openTracker(id) {
@@ -1886,14 +2282,22 @@ document.getElementById('s-window-size').addEventListener('change', e => {
 document.getElementById('nav-back').addEventListener('click', () => {
   const fs = document.getElementById('screen-form');
   const ss = document.getElementById('screen-settings');
-  if (fs.classList.contains('active')) {
+  const pbw = document.getElementById('screen-photo-bw');
+  const pch = document.getElementById('screen-photo-chart');
+  const ls = document.getElementById('screen-list');
+  if (pch.classList.contains('active')) {
+    showScreen('photo-bw');
+    renderPhotoBwPreview();
+  } else if (pbw.classList.contains('active')) {
+    showScreen('home');
+  } else if (fs.classList.contains('active')) {
     editingId ? openTracker(editingId) : showScreen('list');
   } else if (ss.classList.contains('active')) {
-    showScreen('list');
-    renderList();
+    showScreen('home');
+  } else if (ls.classList.contains('active')) {
+    showScreen('home');
   } else {
-    showScreen('list');
-    renderList();
+    showScreen('home');
   }
 });
 
