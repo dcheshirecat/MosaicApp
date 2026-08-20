@@ -22,7 +22,12 @@ jobs:
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.2'
+
+      - name: Install Android SDK Platform 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Scaffold Android project
         run: |
@@ -69,7 +74,7 @@ jobs:
 
           w('build.gradle', """\
           plugins {
-            id 'com.android.application' version '8.6.1' apply false
+            id 'com.android.application' version '8.2.2' apply false
           }
           """)
 
@@ -87,9 +92,18 @@ jobs:
               versionCode 1
               versionName '1.0'
             }
+            signingConfigs {
+              release {
+                storeFile file(System.getenv("MOSAIC_KEYSTORE_PATH") ?: "nonexistent.jks")
+                storePassword System.getenv("MOSAIC_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("MOSAIC_KEY_ALIAS")
+                keyPassword System.getenv("MOSAIC_KEYSTORE_PASSWORD")
+              }
+            }
             buildTypes {
               release {
                 minifyEnabled false
+                signingConfig signingConfigs.release
               }
             }
             compileOptions {
@@ -317,7 +331,7 @@ jobs:
           print("All files written.")
           PYEOF
 
-          gradle wrapper --gradle-version 8.7 --distribution-type bin
+          gradle wrapper --gradle-version 8.2 --distribution-type bin
           chmod +x gradlew
 
       - name: Bundle pdf.js for offline use
@@ -336,49 +350,38 @@ jobs:
           test -s app/src/main/assets/vendor/pdf.min.js
           test -s app/src/main/assets/vendor/pdf.worker.min.js
 
-      # Build a release Android App Bundle for Google Play.
-      # The generated keystore is suitable for a first upload, but keep it safe:
-      # for future updates, use the same upload key via GitHub Actions secrets.
-      - name: Generate upload keystore
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MOSAIC_KEYSTORE_BASE64 }}
         run: |
-          keytool -genkeypair -v \
-            -keystore upload-keystore.jks \
-            -alias mosaictracker-upload \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass changeit -keypass changeit \
-            -dname "CN=Mosaic Tracker, OU=Dev, O=Mosaic Tracker, L=Unknown, S=Unknown, C=US"
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::MOSAIC_KEYSTORE_BASE64 repo secret is not set — see the keystore setup instructions."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mosaic-tracker-release.jks"
 
-      - name: Build release AAB
-        run: ./gradlew bundleRelease --no-daemon --stacktrace
+      - name: Build signed release APK and AAB
+        env:
+          MOSAIC_KEYSTORE_PATH: ${{ runner.temp }}/mosaic-tracker-release.jks
+          MOSAIC_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_KEYSTORE_PASSWORD }}
+          MOSAIC_KEY_ALIAS: ${{ secrets.MOSAIC_KEY_ALIAS }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
 
-      - name: Sign release AAB
+      - name: Collect signed outputs
         run: |
-          jarsigner \
-            -keystore upload-keystore.jks \
-            -storepass changeit \
-            -keypass changeit \
-            -signedjar mosaic-tracker-release.aab \
-            app/build/outputs/bundle/release/app-release.aab \
-            mosaictracker-upload
+          cp app/build/outputs/apk/release/app-release.apk mosaic-tracker.apk
+          cp app/build/outputs/bundle/release/app-release.aab mosaic-tracker.aab
 
-      - name: Verify AAB
-        run: |
-          test -s mosaic-tracker-release.aab
-          jarsigner -verify -verbose -certs mosaic-tracker-release.aab >/dev/null
-          echo "AAB created and signed successfully."
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mosaic-tracker-apk
+          path: mosaic-tracker.apk
+          retention-days: 30
 
-      - name: Upload AAB artifact
+      - name: Upload AAB artifact (for Google Play upload)
         uses: actions/upload-artifact@v4
         with:
           name: mosaic-tracker-aab
-          path: mosaic-tracker-release.aab
-          retention-days: 30
-
-      # Keep the upload keystore available so it can be preserved securely
-      # and reused for future updates. Do NOT publish this file publicly.
-      - name: Upload upload-key artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mosaic-tracker-upload-key
-          path: upload-keystore.jks
+          path: mosaic-tracker.aab
           retention-days: 30
