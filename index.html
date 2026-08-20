@@ -1295,17 +1295,26 @@ function renderChartGrid(p) {
     const groupIdx = Math.floor((p.currentStitch - 1) / winSize);
     const stitchLo = groupIdx * winSize + 1;
     const stitchHi = Math.min(g.cols, stitchLo + winSize - 1);
-    colStart = g.cols - stitchHi;       // stitch 1 = rightmost column
-    colEnd = g.cols - stitchLo + 1;
-    cs = Math.max(4, Math.floor(wrap.clientWidth / winSize));
+    // stitch 1 = rightmost column (g.cols - 1), stitch N = leftmost (0)
+    colStart = g.cols - stitchHi;
+    colEnd   = g.cols - stitchLo + 1;
+    // Fill the wrap width with exactly winSize cells. Use offsetWidth which
+    // is reliable even before layout settles; fall back to 320.
+    const availW = wrap.offsetWidth || wrap.clientWidth || 320;
+    cs = Math.max(6, Math.floor(availW / winSize));
   } else {
     cs = gridCellSize;
     colStart = 0;
     colEnd = g.cols;
   }
 
-  canvas.width = (colEnd - colStart) * cs;
-  canvas.height = g.rows * cs;
+  const canvasW = (colEnd - colStart) * cs;
+  const canvasH = g.rows * cs;
+  canvas.width  = canvasW;
+  canvas.height = canvasH;
+  // Explicitly set CSS size so the canvas is never CSS-scaled by the browser
+  canvas.style.width  = canvasW + 'px';
+  canvas.style.height = canvasH + 'px';
   const ctx = canvas.getContext('2d');
 
   const symbol = p.adcSymbol || '⚓';
@@ -1454,6 +1463,13 @@ function renderChartGrid(p) {
       ctx.lineWidth = 3;
       ctx.strokeRect((curColIndex - colStart) * cs + 1, curRowIndexFromTop * cs + 1, cs - 2, cs - 2);
     }
+  }
+
+  // Reset CSS size in non-windowed mode so previous windowed inline styles
+  // don't stretch the canvas when switching back to full view.
+  if (!windowed) {
+    canvas.style.width  = '';
+    canvas.style.height = '';
   }
 
   canvas.onclick = fixChartMode ? (e) => {
