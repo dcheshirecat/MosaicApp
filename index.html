@@ -973,7 +973,11 @@ async function startPdfTextImport(file) {
     const pageItems = [];
     for (let pn = 1; pn <= doc.numPages; pn++) {
       const page = await doc.getPage(pn);
-      const tc = await page.getTextContent({ includeMarkedContent: false });
+      // disableCombineTextItems keeps each of pdf.js's own text-showing
+      // operations as a separate item instead of merging adjacent ones —
+      // more, smaller items give the column-placement fix below more
+      // accurate item.width values to work with.
+      const tc = await page.getTextContent({ includeMarkedContent: false, disableCombineTextItems: true });
       pageItems.push(tc.items);
     }
 
@@ -1129,12 +1133,32 @@ function parseStitchFiddlePdfItems(pageItems) {
       for (const it of g.items) {
         if (!it.str.includes('!')) continue;
         if (it.x < leftX - localPitch * 1.5 || it.x > leftX + (cols + 3) * localPitch) continue;
-        const startPhysical = Math.round((it.x - g.colorItem.x) / localPitch);
+        // Position each character in this item using the ITEM'S OWN true
+        // physical span (it.width), not the global localPitch stepped by
+        // string index. Stitch Fiddle emits an entire run of marks (with
+        // real background gaps in between) as a single PDF text-showing
+        // operation; pdf.js's getTextContent() collapses those internal
+        // gaps down to a handful of synthetic space characters rather than
+        // one space per real skipped column, while it.width still
+        // correctly reports the TRUE start-to-end span (it's derived from
+        // the actual cursor advance, not from the string). Indexing by
+        // string position alone (the old approach) therefore bunched every
+        // '!' after the first gap much closer together than they really
+        // are — entire clusters collapsed into a dense block instead of
+        // being spread across the row, which is what was making imported
+        // charts look like solid stripes instead of the real picture.
+        // Rebuilding each character's position from it.width / it.str.length
+        // stretches the run back out across its true span and self-corrects
+        // for however many synthetic spaces pdf.js inserted.
+        const itemCharPitch = (it.str.length > 1 && it.width > 0)
+          ? it.width / it.str.length
+          : localPitch;
         for (let i = 0; i < it.str.length; i++) {
           if (it.str[i] !== '!') continue;
+          const charX = it.x + i * itemCharPitch;
           // physPos 0 = $ color marker → col −1 (skipped)
           // physPos 1 = first stitch   → col 0
-          const col = startPhysical + i - 1;
+          const col = Math.round((charX - g.colorItem.x) / localPitch) - 1;
           if (col >= 0 && col < cols) cells[col] = colorChar === '$' ? 1 : 3;
         }
       }
