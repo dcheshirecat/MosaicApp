@@ -56,6 +56,35 @@
   .media-item .media-type-badge { position: absolute; bottom: 6px; left: 6px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 5px; letter-spacing: 0.03em; }
   #media-empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
 
+  /* Notes */
+  #notes-screen-name { font-size: 1.05rem; font-weight: bold; margin-bottom: 14px; color: var(--text); }
+  #notes-textarea { width: 100%; min-height: 55vh; box-sizing: border-box; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; color: var(--text); font-size: 0.95rem; font-family: inherit; line-height: 1.5; resize: vertical; outline: none; }
+
+  /* Session stats */
+  #stats-screen-name { font-size: 1.05rem; font-weight: bold; margin-bottom: 14px; color: var(--text); }
+  #stats-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+  .stats-summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 12px; text-align: center; }
+  .stats-summary-value { font-size: 1.5rem; font-weight: bold; color: var(--accent); }
+  .stats-summary-label { font-size: 0.75rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #stats-session-list { display: flex; flex-direction: column; gap: 8px; }
+  .session-row { display: flex; justify-content: space-between; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .session-row-date { font-size: 0.88rem; color: var(--text); }
+  .session-row-detail { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+  .session-row-rows { font-size: 0.95rem; font-weight: bold; color: var(--accent); white-space: nowrap; }
+  #stats-empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
+
+  /* Export chart */
+  #export-screen-name { font-size: 1.05rem; font-weight: bold; margin-bottom: 6px; color: var(--text); }
+  #export-preview-canvas { display: block; width: 100%; max-height: 45vh; object-fit: contain; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; image-rendering: pixelated; }
+
+  /* Yarn stash */
+  #btn-yarn-add { width: 100%; padding: 13px; background: var(--accent2); color: #fff; border: none; border-radius: 10px; font-size: 0.95rem; font-family: inherit; cursor: pointer; margin-bottom: 18px; }
+  .yarn-card { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
+  .yarn-card-swatch { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border); flex-shrink: 0; }
+  .yarn-card-name { font-weight: bold; color: var(--text); font-size: 0.95rem; }
+  .yarn-card-detail { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  #yarn-empty-state { text-align: center; color: var(--muted); padding: 40px 20px; font-style: italic; font-size: 0.95rem; }
+
   /* ── FORMS ── */
   .form-group { margin-bottom: 16px; }
   label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -350,6 +379,14 @@
     </span>
     <span class="home-nav-card-arrow">→</span>
   </button>
+  <button class="home-nav-card" id="btn-home-yarn">
+    <span class="home-nav-card-icon">🧵</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Yarn Stash</span>
+      <span class="home-nav-card-desc">Keep track of colors and brands you have on hand.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
   <input type="file" id="photo-design-file" accept="image/*" style="display:none">
   <div style="margin-top:8px;padding:0 4px;">
     <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px;">Import Shared Chart</div>
@@ -382,6 +419,30 @@
     </span>
     <span class="home-nav-card-arrow">→</span>
   </button>
+  <button class="home-nav-card" id="btn-project-notes">
+    <span class="home-nav-card-icon">📝</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Notes</span>
+      <span class="home-nav-card-desc" id="project-notes-desc">Yarn amounts, hook size, modifications — anything worth remembering.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+  <button class="home-nav-card" id="btn-project-stats">
+    <span class="home-nav-card-icon">📈</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Session Stats</span>
+      <span class="home-nav-card-desc" id="project-stats-desc">Time spent and progress made, session by session.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
+  <button class="home-nav-card" id="btn-project-export">
+    <span class="home-nav-card-icon">🖨️</span>
+    <span class="home-nav-card-text">
+      <span class="home-nav-card-title">Export Chart</span>
+      <span class="home-nav-card-desc">Save or share the chart as an image or PDF.</span>
+    </span>
+    <span class="home-nav-card-arrow">→</span>
+  </button>
   <div id="share-code-panel">
     <div style="font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">Share Chart</div>
     <input type="text" id="share-name-input" maxlength="40" placeholder="Name this chart (optional)" autocomplete="off" style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:0.9rem;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;">
@@ -404,6 +465,84 @@
   <button id="btn-media-add">+ Add Photo or Video</button>
   <div id="media-grid"></div>
   <div id="media-empty-state">No media yet.<br>Tap above to add a progress photo or video.</div>
+</div>
+
+<div id="screen-notes" class="screen">
+  <div id="notes-screen-name"></div>
+  <textarea id="notes-textarea" placeholder="Yarn amounts, hook size, gauge, modifications, anything worth remembering about this project…"></textarea>
+  <div id="notes-save-hint" class="hint">Saved automatically as you type.</div>
+</div>
+
+<div id="screen-stats" class="screen">
+  <div id="stats-screen-name"></div>
+  <div id="stats-summary-grid">
+    <div class="stats-summary-card"><div class="stats-summary-value" id="stat-total-time">—</div><div class="stats-summary-label">Total time</div></div>
+    <div class="stats-summary-card"><div class="stats-summary-value" id="stat-total-sessions">—</div><div class="stats-summary-label">Sessions</div></div>
+    <div class="stats-summary-card"><div class="stats-summary-value" id="stat-total-rows">—</div><div class="stats-summary-label">Rows logged</div></div>
+    <div class="stats-summary-card"><div class="stats-summary-value" id="stat-avg-pace">—</div><div class="stats-summary-label">Avg. min/row</div></div>
+  </div>
+  <p class="section-title">Recent sessions</p>
+  <div id="stats-session-list"></div>
+  <div id="stats-empty-state">No sessions logged yet.<br>Work on this project for a few minutes and check back here.</div>
+</div>
+
+<div id="screen-export" class="screen">
+  <div id="export-screen-name"></div>
+  <div class="hint" style="margin-bottom:14px;">Renders the full chart — every row and stitch — as a single image, exactly as it appears in Raw view.</div>
+  <canvas id="export-preview-canvas"></canvas>
+  <button class="btn-primary" id="btn-export-image">📷 Share / Save as Image</button>
+  <button class="btn-primary" id="btn-export-pdf">📄 Share / Save as PDF</button>
+</div>
+
+<div id="screen-yarn" class="screen">
+  <button id="btn-yarn-add">+ Add Yarn</button>
+  <div id="yarn-list"></div>
+  <div id="yarn-empty-state">No yarn saved yet.<br>Tap above to log a color and brand.</div>
+</div>
+
+<div id="screen-yarn-form" class="screen">
+  <p class="section-title">Yarn Details</p>
+  <div class="form-group">
+    <label>Color name</label>
+    <input type="text" id="yf-color-name" placeholder="e.g. Dusty Rose" maxlength="60">
+  </div>
+  <div class="form-group">
+    <label>Color swatch</label>
+    <div class="color-row">
+      <button type="button" class="color-swatch-btn" id="f-color-yarn-swatch" style="background:#cccccc"></button>
+      <div class="color-picker-pop" id="picker-pop-yarn">
+        <div class="color-picker-hex-row">
+          <div class="swatch-preview" id="preview-yarn" style="background:#cccccc"></div>
+          <input type="text" id="f-color-yarn-hex-input" value="#cccccc" maxlength="7" placeholder="#RRGGBB">
+        </div>
+        <canvas class="color-wheel" id="wheel-yarn" width="160" height="160"></canvas>
+        <input type="range" class="wheel-lightness" id="lightness-yarn" min="0" max="100" value="50">
+        <div class="color-picker-presets" id="presets-yarn"></div><div class="color-picker-section-title">Saved custom colors</div><div class="custom-color-presets" id="custom-presets-yarn"></div><div class="save-color-row"><button type="button" class="btn-small save-custom-color" data-key="yarn">Save current color</button></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Brand / company</label>
+    <input type="text" id="yf-brand" placeholder="e.g. Lion Brand, Red Heart" maxlength="60">
+  </div>
+  <div class="form-group">
+    <label>Weight</label>
+    <select id="yf-weight">
+      <option value="">—</option>
+      <option>Lace</option><option>Fingering</option><option>Sport</option>
+      <option>DK</option><option>Worsted</option><option>Bulky</option><option>Super Bulky</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Amount on hand</label>
+    <input type="text" id="yf-amount" placeholder="e.g. 2 skeins, 180g" maxlength="60">
+  </div>
+  <div class="form-group">
+    <label>Notes</label>
+    <textarea id="yf-notes" placeholder="Dye lot, where it was bought, what it's earmarked for…" style="min-height:80px;"></textarea>
+  </div>
+  <button class="btn-primary" id="btn-yarn-save">Save Yarn</button>
+  <button class="btn-secondary" id="btn-yarn-delete" style="display:none;">Delete Yarn</button>
 </div>
 
 <div id="screen-list" class="screen">
@@ -443,6 +582,15 @@
       <button type="button" class="btn-small" id="btn-theme-reset">Reset</button>
     </div>
     <div class="hint">Changes the app's highlight color used for buttons, the current row, and progress indicators.</div>
+  </div>
+
+  <p class="section-title">Backup &amp; Restore</p>
+  <div class="form-group">
+    <div class="hint" style="margin-bottom:10px;">Save every project, your yarn stash, and app settings to a single file — or restore from one.</div>
+    <button class="btn-primary" id="btn-backup-export">⬇ Export Backup</button>
+    <input type="file" id="backup-file-input" accept="application/json" style="display:none">
+    <button class="btn-secondary" id="btn-backup-import">⬆ Restore from Backup</button>
+    <div class="hint" id="backup-status" style="margin-top:8px;"></div>
   </div>
 </div>
 
@@ -863,12 +1011,52 @@ async function saveAll() {
 }
 function getProject(id) { return projects.find(p => p.id === id); }
 
+// ── SESSION TRACKING ─────────────────────────────────────────────────────
+// A "session" is one continuous stretch working in the tracker on a single
+// project. Started when the tracker screen becomes active, closed out the
+// moment it stops being active (any navigation away) or the app is
+// backgrounded — logged only if it lasted long enough to be a real work
+// session, not an accidental tap-through.
+let activeSession = null; // {startTime, startRow, startStitch}
+const SESSION_MIN_MS = 15000;
+
+function startSession() {
+  const p = getProject(activeId); if (!p) return;
+  activeSession = { startTime: Date.now(), startRow: p.currentRow, startStitch: p.currentStitch };
+}
+function endSession() {
+  if (!activeSession) return;
+  const p = getProject(activeId);
+  const elapsedMs = Date.now() - activeSession.startTime;
+  if (p && elapsedMs >= SESSION_MIN_MS) {
+    p.sessions = p.sessions || [];
+    p.sessions.push({
+      date: new Date().toISOString(),
+      durationMin: Math.round((elapsedMs / 60000) * 10) / 10,
+      rowsCompleted: Math.max(0, p.currentRow - activeSession.startRow)
+    });
+    if (p.sessions.length > 300) p.sessions = p.sessions.slice(-300);
+    saveAll();
+  }
+  activeSession = null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    endSession();
+  } else if (document.getElementById('screen-tracker').classList.contains('active')) {
+    startSession();
+  }
+});
+
 // ── SCREENS ──────────────────────────────────────────────────────────────
 function showScreen(id) {
+  const current = document.querySelector('.screen.active');
+  if (current && current.id === 'screen-tracker' && id !== 'tracker') endSession();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
   document.getElementById('nav-back').style.display = id === 'home' ? 'none' : 'block';
   document.getElementById('btn-settings').style.display = (id === 'home' || id === 'list') ? 'block' : 'none';
+  if (id === 'tracker') startSession();
 }
 
 // ── PROJECT LIST ──────────────────────────────────────────────────────────
@@ -915,11 +1103,374 @@ function openProjectScreen(id) {
   document.getElementById('project-media-desc').textContent = count
     ? `${count} item${count === 1 ? '' : 's'} attached — add more or review them.`
     : 'Add progress photos or videos to this project.';
+  document.getElementById('project-notes-desc').textContent = (p.notes || '').trim()
+    ? (p.notes.trim().slice(0, 60) + (p.notes.trim().length > 60 ? '…' : ''))
+    : 'Yarn amounts, hook size, modifications — anything worth remembering.';
+  const sessionCount = (p.sessions || []).length;
+  document.getElementById('project-stats-desc').textContent = sessionCount
+    ? `${sessionCount} session${sessionCount === 1 ? '' : 's'} logged.`
+    : 'Time spent and progress made, session by session.';
   refreshSharePanel(p);
   showScreen('project');
 }
 document.getElementById('btn-project-chart').addEventListener('click', () => openTracker(activeId));
 document.getElementById('btn-project-media').addEventListener('click', () => openMediaScreen(activeId));
+document.getElementById('btn-project-notes').addEventListener('click', () => openNotesScreen(activeId));
+document.getElementById('btn-project-stats').addEventListener('click', () => openStatsScreen(activeId));
+document.getElementById('btn-project-export').addEventListener('click', () => openExportScreen(activeId));
+
+// ── PROJECT NOTES ────────────────────────────────────────────────────────
+let notesSaveTimer = null;
+function openNotesScreen(id) {
+  activeId = id;
+  const p = getProject(id); if (!p) return;
+  document.getElementById('notes-screen-name').textContent = p.name;
+  document.getElementById('notes-textarea').value = p.notes || '';
+  showScreen('notes');
+}
+document.getElementById('notes-textarea').addEventListener('input', () => {
+  const p = getProject(activeId); if (!p) return;
+  p.notes = document.getElementById('notes-textarea').value;
+  const hint = document.getElementById('notes-save-hint');
+  hint.textContent = 'Saving…';
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(() => {
+    saveAll();
+    hint.textContent = 'Saved automatically as you type.';
+  }, 500);
+});
+
+// ── SESSION STATS ────────────────────────────────────────────────────────
+function openStatsScreen(id) {
+  activeId = id;
+  const p = getProject(id); if (!p) return;
+  document.getElementById('stats-screen-name').textContent = p.name;
+  renderStats(p);
+  showScreen('stats');
+}
+function renderStats(p) {
+  const sessions = (p.sessions || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+  const totalMin = sessions.reduce((sum, s) => sum + s.durationMin, 0);
+  const totalRows = sessions.reduce((sum, s) => sum + s.rowsCompleted, 0);
+
+  const hrs = Math.floor(totalMin / 60), mins = Math.round(totalMin % 60);
+  document.getElementById('stat-total-time').textContent = sessions.length
+    ? (hrs ? `${hrs}h ${mins}m` : `${mins}m`) : '—';
+  document.getElementById('stat-total-sessions').textContent = sessions.length || '—';
+  document.getElementById('stat-total-rows').textContent = sessions.length ? totalRows : '—';
+  document.getElementById('stat-avg-pace').textContent = (totalRows > 0)
+    ? (Math.round((totalMin / totalRows) * 10) / 10) : '—';
+
+  const list = document.getElementById('stats-session-list');
+  const empty = document.getElementById('stats-empty-state');
+  list.innerHTML = '';
+  empty.style.display = sessions.length ? 'none' : '';
+  sessions.slice(0, 50).forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'session-row';
+    const d = new Date(s.date);
+    const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    row.innerHTML = `
+      <div>
+        <div class="session-row-date">${dateStr}</div>
+        <div class="session-row-detail">${timeStr} · ${s.durationMin} min</div>
+      </div>
+      <div class="session-row-rows">${s.rowsCompleted > 0 ? '+' + s.rowsCompleted + ' row' + (s.rowsCompleted === 1 ? '' : 's') : '—'}</div>`;
+    list.appendChild(row);
+  });
+}
+
+// ── EXPORT CHART (image / PDF) ───────────────────────────────────────────
+// Renders the FULL chart (all rows/columns, Raw view — real yarn colors +
+// X marks, no greyed-out progress or highlight box, since this is meant as
+// a clean reference/printable copy) to an offscreen canvas.
+function renderChartToCanvas(p) {
+  const g = p.chartGrid;
+  const cs = 18; // fixed px/cell — independent of the on-screen zoom level
+  const canvas = document.createElement('canvas');
+  canvas.width = g.cols * cs;
+  canvas.height = g.rows * cs;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < g.rows; r++) {
+    for (let c = 0; c < g.cols; c++) {
+      const code = g.cells[r][c];
+      const isB = code === 2 || code === 3;
+      ctx.fillStyle = isB ? p.colorBHex : p.colorAHex;
+      ctx.fillRect(c * cs, r * cs, cs, cs);
+    }
+  }
+  ctx.lineWidth = 1;
+  for (let r = 0; r <= g.rows; r++) {
+    ctx.strokeStyle = (g.rows - r) % 10 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.moveTo(0, r * cs + 0.5); ctx.lineTo(canvas.width, r * cs + 0.5); ctx.stroke();
+  }
+  for (let c = 0; c <= g.cols; c++) {
+    ctx.strokeStyle = (g.cols - c) % 10 === 0 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.15)';
+    ctx.beginPath(); ctx.moveTo(c * cs + 0.5, 0); ctx.lineTo(c * cs + 0.5, canvas.height); ctx.stroke();
+  }
+  const xPad = cs * 0.22;
+  ctx.lineWidth = Math.max(1.5, cs * 0.11);
+  for (let r = 0; r < g.rows; r++) {
+    for (let c = 0; c < g.cols; c++) {
+      const code = g.cells[r][c];
+      if (code !== 1 && code !== 3) continue;
+      const isB = code === 2 || code === 3;
+      ctx.strokeStyle = isB ? '#ffffff' : '#000000';
+      const x0 = c * cs, y0 = r * cs;
+      ctx.beginPath();
+      ctx.moveTo(x0 + xPad, y0 + xPad); ctx.lineTo(x0 + cs - xPad, y0 + cs - xPad);
+      ctx.moveTo(x0 + cs - xPad, y0 + xPad); ctx.lineTo(x0 + xPad, y0 + cs - xPad);
+      ctx.stroke();
+    }
+  }
+  return canvas;
+}
+
+let exportCanvas = null;
+function openExportScreen(id) {
+  activeId = id;
+  const p = getProject(id); if (!p) return;
+  document.getElementById('export-screen-name').textContent = p.name;
+  const isGrid = p.chartSource === 'grid' && p.chartGrid;
+  const btnImg = document.getElementById('btn-export-image');
+  const btnPdf = document.getElementById('btn-export-pdf');
+  if (!isGrid) {
+    document.getElementById('export-preview-canvas').getContext('2d').clearRect(0, 0, 1, 1);
+    btnImg.disabled = true; btnPdf.disabled = true;
+    toast('This project doesn\'t have a chart to export yet');
+    showScreen('export');
+    return;
+  }
+  btnImg.disabled = false; btnPdf.disabled = false;
+  exportCanvas = renderChartToCanvas(p);
+  const prev = document.getElementById('export-preview-canvas');
+  prev.width = exportCanvas.width; prev.height = exportCanvas.height;
+  prev.getContext('2d').drawImage(exportCanvas, 0, 0);
+  showScreen('export');
+}
+
+function canvasToBlob(canvas, type) {
+  return new Promise(resolve => canvas.toBlob(resolve, type, 0.95));
+}
+async function shareOrDownload(blob, filename, mime) {
+  const file = new File([blob], filename, { type: mime });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: filename }); return; } catch (e) { /* fall through to download */ }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+document.getElementById('btn-export-image').addEventListener('click', async () => {
+  if (!exportCanvas) return;
+  const p = getProject(activeId);
+  const blob = await canvasToBlob(exportCanvas, 'image/png');
+  await shareOrDownload(blob, `${(p.name || 'chart').replace(/[^a-z0-9]+/gi, '-')}.png`, 'image/png');
+});
+
+// Hand-rolled minimal single-page PDF: embeds the chart as a JPEG XObject.
+// No external library / CDN dependency — this app runs offline, and a
+// single-image PDF page is a small, well-documented format to build
+// directly: one Catalog, one Pages tree, one Page with an XObject image,
+// and a content stream that places it.
+async function canvasToPdfBlob(canvas) {
+  const jpegBlob = await canvasToBlob(canvas, 'image/jpeg');
+  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+
+  const W = canvas.width, H = canvas.height;
+  // Fit the image onto a Letter-ish page, preserving aspect ratio, with a
+  // small margin, scaling DOWN only (never upscale a small chart).
+  const pageW = 612, pageH = 792, margin = 24;
+  const maxW = pageW - margin * 2, maxH = pageH - margin * 2;
+  const scale = Math.min(1, maxW / W, maxH / H);
+  const drawW = W * scale, drawH = H * scale;
+  const x = (pageW - drawW) / 2, y = (pageH - drawH) / 2;
+
+  const enc = new TextEncoder();
+  const parts = []; // array of Uint8Array, concatenated at the end
+  const offsets = [0]; // 1-indexed by object number
+  let pos = 0;
+  function push(bytes) { parts.push(bytes); pos += bytes.length; }
+  function pushStr(s) { push(enc.encode(s)); }
+  function beginObj(n) { offsets[n] = pos; pushStr(`${n} 0 obj\n`); }
+
+  pushStr('%PDF-1.4\n');
+
+  beginObj(1); pushStr('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  beginObj(2); pushStr('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  beginObj(3); pushStr(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
+  beginObj(4);
+  pushStr(`<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`);
+  push(jpegBytes);
+  pushStr('\nendstream\nendobj\n');
+  const content = `q\n${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Im0 Do\nQ\n`;
+  beginObj(5); pushStr(`<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+
+  const xrefStart = pos;
+  pushStr(`xref\n0 6\n0000000000 65535 f \n`);
+  for (let i = 1; i <= 5; i++) pushStr(offsets[i].toString().padStart(10, '0') + ' 00000 n \n');
+  pushStr(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
+
+  return new Blob(parts, { type: 'application/pdf' });
+}
+
+document.getElementById('btn-export-pdf').addEventListener('click', async () => {
+  if (!exportCanvas) return;
+  const p = getProject(activeId);
+  const blob = await canvasToPdfBlob(exportCanvas);
+  await shareOrDownload(blob, `${(p.name || 'chart').replace(/[^a-z0-9]+/gi, '-')}.pdf`, 'application/pdf');
+});
+
+// ── YARN STASH ────────────────────────────────────────────────────────────
+let yarnStash = [];
+let editingYarnId = null;
+async function loadYarnStash() {
+  const raw = await store.get('mc_yarn_stash');
+  yarnStash = raw ? JSON.parse(raw) : [];
+}
+async function saveYarnStash() { await store.set('mc_yarn_stash', JSON.stringify(yarnStash)); }
+
+function openYarnScreen() {
+  renderYarnList();
+  showScreen('yarn');
+}
+function renderYarnList() {
+  const list = document.getElementById('yarn-list');
+  const empty = document.getElementById('yarn-empty-state');
+  list.innerHTML = '';
+  empty.style.display = yarnStash.length ? 'none' : '';
+  yarnStash.forEach(y => {
+    const card = document.createElement('div');
+    card.className = 'yarn-card';
+    card.innerHTML = `
+      <div class="yarn-card-swatch" style="background:${y.hex || '#cccccc'}"></div>
+      <div>
+        <div class="yarn-card-name">${y.colorName || 'Unnamed color'}</div>
+        <div class="yarn-card-detail">${[y.brand, y.weight, y.amount].filter(Boolean).join(' · ') || 'No details'}</div>
+      </div>`;
+    card.addEventListener('click', () => openYarnForm(y.id));
+    list.appendChild(card);
+  });
+}
+function openYarnForm(id) {
+  editingYarnId = id || null;
+  const y = id ? yarnStash.find(x => x.id === id) : null;
+  document.getElementById('yf-color-name').value = y ? (y.colorName || '') : '';
+  document.getElementById('yf-brand').value = y ? (y.brand || '') : '';
+  document.getElementById('yf-weight').value = y ? (y.weight || '') : '';
+  document.getElementById('yf-amount').value = y ? (y.amount || '') : '';
+  document.getElementById('yf-notes').value = y ? (y.notes || '') : '';
+  const _yHex = y ? (y.hex || '#cccccc') : '#cccccc';
+  setColorPickerValue('yarn', _yHex);
+  // Sync lightness slider to approximate hsl(*, *, L) of the stored colour
+  (function() {
+    const r = parseInt(_yHex.slice(1,3),16)/255;
+    const g = parseInt(_yHex.slice(3,5),16)/255;
+    const b = parseInt(_yHex.slice(5,7),16)/255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    const l = Math.round((max+min)/2*100);
+    const sl = document.getElementById('lightness-yarn');
+    if (sl) { sl.value = Math.max(10, Math.min(90, l)); drawColorWheel('yarn'); }
+  })();
+  document.getElementById('picker-pop-yarn').classList.remove('open');
+  document.getElementById('btn-yarn-delete').style.display = id ? '' : 'none';
+  showScreen('yarn-form');
+}
+document.getElementById('btn-yarn-add').addEventListener('click', () => openYarnForm(null));
+document.getElementById('btn-yarn-save').addEventListener('click', async () => {
+  const data = {
+    colorName: document.getElementById('yf-color-name').value.trim(),
+    hex: getColorPickerValue('yarn'),
+    brand: document.getElementById('yf-brand').value.trim(),
+    weight: document.getElementById('yf-weight').value,
+    amount: document.getElementById('yf-amount').value.trim(),
+    notes: document.getElementById('yf-notes').value.trim()
+  };
+  if (editingYarnId) {
+    const y = yarnStash.find(x => x.id === editingYarnId);
+    if (y) Object.assign(y, data);
+  } else {
+    yarnStash.push(Object.assign({ id: uid() }, data));
+  }
+  await saveYarnStash();
+  toast('Yarn saved');
+  openYarnScreen();
+});
+document.getElementById('btn-yarn-delete').addEventListener('click', async () => {
+  if (!editingYarnId) return;
+  if (!confirm('Delete this yarn from your stash?')) return;
+  yarnStash = yarnStash.filter(x => x.id !== editingYarnId);
+  await saveYarnStash();
+  toast('Yarn deleted');
+  openYarnScreen();
+});
+document.getElementById('btn-home-yarn').addEventListener('click', openYarnScreen);
+
+// ── BACKUP & RESTORE ─────────────────────────────────────────────────────
+async function exportBackup() {
+  const backup = {
+    type: 'mosaic-tracker-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    projects,
+    settings,
+    yarnStash
+  };
+  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+  const stamp = new Date().toISOString().slice(0, 10);
+  await shareOrDownload(blob, `mosaic-tracker-backup-${stamp}.json`, 'application/json');
+}
+document.getElementById('btn-backup-export').addEventListener('click', () => {
+  exportBackup().catch(err => { console.error(err); toast('Backup export failed'); });
+});
+document.getElementById('btn-backup-import').addEventListener('click', () => {
+  document.getElementById('backup-file-input').click();
+});
+document.getElementById('backup-file-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const status = document.getElementById('backup-status');
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (data.type !== 'mosaic-tracker-backup' || !Array.isArray(data.projects)) {
+      status.textContent = 'That file doesn\'t look like a Mosaic Tracker backup.';
+      return;
+    }
+    const replace = confirm(
+      `This backup has ${data.projects.length} project(s) and ${(data.yarnStash || []).length} yarn(s).\n\n` +
+      `OK = REPLACE everything currently in the app with this backup.\n` +
+      `Cancel = MERGE it in alongside what you already have.`
+    );
+    if (replace) {
+      projects = data.projects;
+      yarnStash = data.yarnStash || [];
+      if (data.settings) settings = Object.assign(settings, data.settings);
+    } else {
+      const existingIds = new Set(projects.map(p => p.id));
+      data.projects.forEach(p => { if (!existingIds.has(p.id)) projects.push(p); });
+      const existingYarnIds = new Set(yarnStash.map(y => y.id));
+      (data.yarnStash || []).forEach(y => { if (!existingYarnIds.has(y.id)) yarnStash.push(y); });
+    }
+    await saveAll();
+    await saveYarnStash();
+    await saveSettings();
+    applyAccentColor(settings.accentColor || DEFAULT_ACCENT);
+    status.textContent = `Restored ${replace ? '(replaced)' : '(merged)'} — ${projects.length} project(s) total.`;
+    toast('Backup restored');
+  } catch (err) {
+    console.error(err);
+    status.textContent = 'Could not read that file — is it a valid backup?';
+  }
+});
 
 // ── ATTACH MEDIA (photos & videos, per project) ─────────────────────────────
 const MEDIA_MAX_BYTES = 25 * 1024 * 1024; // ~25MB/file — stored on-device as a data URL
@@ -1111,8 +1662,8 @@ const COLOR_PRESETS = [
   '#8e44ad', '#c2185b', '#795548', '#5d4037', '#d2691e', '#b0c4de',
   '#ffd1dc', '#98d8c8', '#f6c90e', '#6a5acd', '#2c2c54', '#c0c0c0'
 ];
-const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f', theme: '#e94560' };
-const COLOR_PICKER_KEYS = ['a', 'b', 'theme'];
+const colorPickerState = { a: '#f5e6c8', b: '#2a7f7f', theme: '#e94560', yarn: '#cccccc' };
+const COLOR_PICKER_KEYS = ['a', 'b', 'theme', 'yarn'];
 let customColors = [];
 
 async function loadCustomColors() {
@@ -1280,7 +1831,13 @@ COLOR_PICKER_KEYS.forEach(key => {
     COLOR_PICKER_KEYS.filter(k => k !== key).forEach(k => {
       document.getElementById('picker-pop-' + k).classList.remove('open');
     });
-    document.getElementById('picker-pop-' + key).classList.toggle('open');
+    const pop = document.getElementById('picker-pop-' + key);
+    pop.classList.toggle('open');
+    // Redraw the wheel now that it is visible — necessary when the canvas was
+    // inside a display:none screen at initialisation time.
+    if (pop.classList.contains('open')) {
+      requestAnimationFrame(() => drawColorWheel(key));
+    }
   });
   const hexInput = document.getElementById('f-color-' + key + '-hex-input');
   hexInput.addEventListener('input', e => {
@@ -3013,6 +3570,11 @@ document.getElementById('nav-back').addEventListener('click', () => {
   const ps = document.getElementById('screen-project');
   const ms = document.getElementById('screen-media');
   const ts = document.getElementById('screen-tracker');
+  const ns = document.getElementById('screen-notes');
+  const sts = document.getElementById('screen-stats');
+  const ex = document.getElementById('screen-export');
+  const ys = document.getElementById('screen-yarn');
+  const yf = document.getElementById('screen-yarn-form');
   if (pch.classList.contains('active')) {
     showScreen('photo-bw');
     renderPhotoBwPreview();
@@ -3022,7 +3584,12 @@ document.getElementById('nav-back').addEventListener('click', () => {
     editingId ? openTracker(editingId) : showScreen('list');
   } else if (ss.classList.contains('active')) {
     showScreen('home');
-  } else if (ms.classList.contains('active')) {
+  } else if (yf.classList.contains('active')) {
+    openYarnScreen();
+  } else if (ys.classList.contains('active')) {
+    showScreen('home');
+  } else if (ms.classList.contains('active') || ns.classList.contains('active') ||
+             sts.classList.contains('active') || ex.classList.contains('active')) {
     openProjectScreen(activeId);
   } else if (ts.classList.contains('active')) {
     openProjectScreen(activeId);
@@ -3271,6 +3838,7 @@ const _origOpenProjectFn = window.openProject;
   await loadAll();
   await loadSettings();
   await loadCustomColors();
+  await loadYarnStash();
   syncWindowViewUI();
   renderList();
 })();
@@ -3293,6 +3861,7 @@ function saveAllSync() {
   }
   syncSet('mc_projects', JSON.stringify(projects));
   syncSet('mc_settings', JSON.stringify(settings));
+  syncSet('mc_yarn_stash', JSON.stringify(yarnStash));
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveAllSync();
