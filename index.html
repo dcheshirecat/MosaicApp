@@ -27,6 +27,7 @@
   #nav h1 { flex: 1; min-width: 0; font-size: 1.1rem; letter-spacing: 0.05em; color: var(--accent); font-style: italic; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #nav-back { display: none; flex-shrink: 0; min-width: 40px; background: none; border: none; color: var(--muted); font-size: 1.4rem; cursor: pointer; padding: 4px 8px; text-align: left; }
   #btn-settings { flex-shrink: 0; min-width: 40px; background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; padding: 4px 8px; width: 40px; }
+  #btn-help { flex-shrink: 0; min-width: 34px; width: 34px; height: 34px; background: none; border: 1px solid var(--border); border-radius: 50%; color: var(--muted); font-size: 1rem; font-weight: bold; font-family: inherit; cursor: pointer; padding: 0; margin-right: 4px; }
 
   /* ── SCREENS ── */
   .screen { display: none; padding: 16px; }
@@ -185,7 +186,7 @@
   #emoji-cat-tabs::-webkit-scrollbar { display: none; }
   .emoji-cat-tab { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 0.78rem; font-family: inherit; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .emoji-cat-tab.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-  #emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; overflow-y: auto; flex: 1; padding: 2px; }
+  #emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; overflow-y: auto; flex: 1; min-height: 0; padding: 2px; -webkit-overflow-scrolling: touch; }
   .emoji-btn { width: 100%; aspect-ratio: 1; border-radius: 8px; background: var(--card); border: 1px solid transparent; font-size: 1.4rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color 0.1s; }
   .emoji-btn:active, .emoji-btn.selected { border-color: var(--accent); background: var(--row-hi); }
   #emoji-overlay { display: none; position: fixed; inset: 0; z-index: 299; background: rgba(0,0,0,0.4); }
@@ -311,6 +312,44 @@
   .home-nav-card-title { font-size: 1.05rem; font-weight: bold; }
   .home-nav-card-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
   .home-nav-card-arrow { font-size: 1.3rem; color: var(--muted); flex-shrink: 0; }
+
+  /* ── TUTORIAL OVERLAY ── */
+  #tutorial-overlay { display:none; position:fixed; inset:0; z-index:600; background:rgba(0,0,0,0.78); align-items:flex-end; justify-content:center; }
+  #tutorial-overlay.open { display:flex; }
+  #tutorial-card { background:var(--surface); border:1px solid var(--border); border-radius:20px 20px 0 0; width:100%; max-width:500px; padding:24px 20px calc(28px + env(safe-area-inset-bottom,0px)); animation:slideUp 0.28s ease; }
+  @keyframes slideUp { from{transform:translateY(60px);opacity:0} to{transform:translateY(0);opacity:1} }
+  #tutorial-dots { display:flex; gap:7px; justify-content:center; margin-bottom:18px; }
+  .t-dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:background 0.2s,transform 0.2s; }
+  .t-dot.active { background:var(--accent); transform:scale(1.3); }
+  #tutorial-icon { font-size:2.6rem; text-align:center; margin-bottom:10px; }
+  #tutorial-title { font-size:1.15rem; font-weight:bold; color:var(--text); text-align:center; margin-bottom:9px; }
+  #tutorial-body { font-size:0.92rem; color:var(--muted); line-height:1.65; text-align:center; margin-bottom:20px; min-height:76px; }
+  #tutorial-body strong { color:var(--text); }
+  #tutorial-body em { color:var(--accent); font-style:normal; }
+  #tutorial-actions { display:flex; gap:8px; align-items:center; }
+  #btn-tutorial-prev { padding:11px 16px; background:var(--card); color:var(--muted); border:1px solid var(--border); border-radius:10px; font-size:0.88rem; font-family:inherit; cursor:pointer; }
+  #btn-tutorial-next { flex:1; padding:13px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:1rem; font-family:inherit; cursor:pointer; font-weight:bold; }
+  #btn-tutorial-skip { padding:10px 12px; background:none; border:none; color:var(--muted); font-size:0.8rem; font-family:inherit; cursor:pointer; text-decoration:underline; }
+
+  /* ── SETTINGS ADDITIONS ── */
+  .scheme-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:4px; }
+  .scheme-btn { border-radius:12px; border:2px solid var(--border); cursor:pointer; padding:10px 6px 8px; display:flex; flex-direction:column; align-items:center; gap:6px; background:transparent; transition:border-color 0.15s; }
+  .scheme-btn.active { border-color:var(--accent); }
+  .scheme-swatch { width:42px; height:22px; border-radius:6px; display:flex; overflow:hidden; }
+  .scheme-swatch span { flex:1; height:100%; }
+  .scheme-label { font-size:0.7rem; color:var(--muted); font-family:inherit; text-align:center; line-height:1.2; }
+  .scheme-btn.active .scheme-label { color:var(--accent); }
+  .seg-ctrl { display:flex; border-radius:10px; overflow:hidden; border:1px solid var(--border); margin-top:4px; }
+  .seg-ctrl button { flex:1; padding:11px 4px; background:var(--card); border:none; border-right:1px solid var(--border); color:var(--muted); font-size:0.88rem; font-family:inherit; cursor:pointer; }
+  .seg-ctrl button:last-child { border-right:none; }
+  .seg-ctrl button.active { background:var(--accent); color:#fff; }
+  .font-grid { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+  .font-btn { border-radius:10px; border:2px solid var(--border); cursor:pointer; padding:12px 14px; background:transparent; text-align:left; }
+  .font-btn.active { border-color:var(--accent); }
+  .font-btn-name { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px; font-family:inherit; }
+  .font-btn-sample { font-size:1rem; color:var(--text); }
+  .font-btn.active .font-btn-name { color:var(--accent); }
+
 </style>
 <script>
 // Detect real status bar height on Android WebView.
@@ -382,6 +421,138 @@
   } else { measure(); }
   window.addEventListener('resize', measure);
 })();
+
+// ── COLOR SCHEMES ─────────────────────────────────────────────────────────────
+const COLOR_SCHEMES = [
+  { id:'midnight', label:'Midnight',  sw:['#1a1a2e','#16213e','#0f3460'], vars:{'--bg':'#1a1a2e','--surface':'#16213e','--card':'#0f3460','--text':'#eaeaea','--muted':'#8892a4','--border':'#2a3a5c'} },
+  { id:'amoled',   label:'AMOLED',    sw:['#000','#0d0d0d','#181818'],    vars:{'--bg':'#000000','--surface':'#0d0d0d','--card':'#181818','--text':'#ffffff','--muted':'#888888','--border':'#2a2a2a'} },
+  { id:'ocean',    label:'Ocean',     sw:['#0a192f','#112240','#1d3557'], vars:{'--bg':'#0a192f','--surface':'#112240','--card':'#1d3557','--text':'#ccd6f6','--muted':'#8892b0','--border':'#233554'} },
+  { id:'forest',   label:'Forest',    sw:['#1a2a1a','#1e3320','#1a4a2a'], vars:{'--bg':'#1a2a1a','--surface':'#1e3320','--card':'#1a4a2a','--text':'#e8f5e9','--muted':'#7a9e7e','--border':'#2a4a30'} },
+  { id:'rose',     label:'Rose',      sw:['#2a1a22','#321e28','#3d2535'], vars:{'--bg':'#2a1a22','--surface':'#321e28','--card':'#3d2535','--text':'#f5e6ea','--muted':'#a07a8a','--border':'#4a2a3a'} },
+  { id:'slate',    label:'Slate',     sw:['#1c2128','#22272e','#2d333b'], vars:{'--bg':'#1c2128','--surface':'#22272e','--card':'#2d333b','--text':'#adbac7','--muted':'#768390','--border':'#373e47'} },
+  { id:'lavender', label:'Lavender',  sw:['#1e1a2e','#26214a','#312b5c'], vars:{'--bg':'#1e1a2e','--surface':'#26214a','--card':'#312b5c','--text':'#e8e0f8','--muted':'#9090bb','--border':'#3d3770'} },
+  { id:'light',    label:'Light',     sw:['#f0f0f5','#ffffff','#e8e8f0'], vars:{'--bg':'#f0f0f5','--surface':'#ffffff','--card':'#e8e8f0','--text':'#1a1a2e','--muted':'#55558a','--border':'#c8c8dd'} },
+  { id:'warm',     label:'Warm',      sw:['#f5ede0','#fdf7ef','#ede3d4'], vars:{'--bg':'#f5ede0','--surface':'#fdf7ef','--card':'#ede3d4','--text':'#2c1f10','--muted':'#7a6555','--border':'#d4c4b0'} },
+];
+const FONTS = [
+  { id:'georgia', label:'Serif (Georgia)', family:"'Georgia',serif",              sample:'The quick brown fox' },
+  { id:'system',  label:'System Sans',     family:"system-ui,sans-serif",         sample:'The quick brown fox' },
+  { id:'rounded', label:'Rounded',         family:"'Trebuchet MS',sans-serif",     sample:'The quick brown fox' },
+  { id:'mono',    label:'Monospace',       family:"'Courier New',monospace",       sample:'The quick brown fox' },
+  { id:'times',   label:'Classic Serif',   family:"'Times New Roman',serif",      sample:'The quick brown fox' },
+];
+
+function applyScheme(id) {
+  const s = COLOR_SCHEMES.find(x=>x.id===id) || COLOR_SCHEMES[0];
+  const root = document.documentElement;
+  Object.entries(s.vars).forEach(([k,v]) => root.style.setProperty(k, v));
+  // Recompute row-hi from current accent
+  const acc = (settings.accentColor || '#e94560').replace('#','');
+  const rgb = acc.match(/.{2}/g);
+  if (rgb) root.style.setProperty('--row-hi',`rgba(${parseInt(rgb[0],16)},${parseInt(rgb[1],16)},${parseInt(rgb[2],16)},0.25)`);
+  settings.colorScheme = id;
+}
+function applyFontFamily(id) {
+  const f = FONTS.find(x=>x.id===id) || FONTS[0];
+  document.body.style.fontFamily = f.family;
+  settings.fontId = id;
+}
+function applyTextSize(px) {
+  document.documentElement.style.fontSize = px + 'px';
+  settings.textSize = +px;
+}
+
+function buildSchemeGrid() {
+  const grid = document.getElementById('scheme-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  COLOR_SCHEMES.forEach(s => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'scheme-btn' + (settings.colorScheme===s.id ? ' active' : '');
+    btn.innerHTML = `<div class="scheme-swatch">${s.sw.map(c=>`<span style="background:${c}"></span>`).join('')}</div><span class="scheme-label">${s.label}</span>`;
+    btn.addEventListener('click', () => {
+      applyScheme(s.id); saveSettings();
+      grid.querySelectorAll('.scheme-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    grid.appendChild(btn);
+  });
+}
+function buildFontGrid() {
+  const grid = document.getElementById('font-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  FONTS.forEach(f => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'font-btn' + (settings.fontId===f.id ? ' active' : '');
+    btn.innerHTML = `<div class="font-btn-name">${f.label}</div><div class="font-btn-sample" style="font-family:${f.family}">${f.sample}</div>`;
+    btn.addEventListener('click', () => {
+      applyFontFamily(f.id); saveSettings();
+      grid.querySelectorAll('.font-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    grid.appendChild(btn);
+  });
+}
+function syncTextSizeCtrl() {
+  const sz = settings.textSize || 16;
+  document.querySelectorAll('#text-size-ctrl button').forEach(b =>
+    b.classList.toggle('active', +b.dataset.size === sz));
+}
+
+// ── TUTORIAL ──────────────────────────────────────────────────────────────────
+const TUTORIAL_STEPS = [
+  { icon:'🎉', title:'Welcome to Mosaic Tracker!',
+    body:'This quick tour walks you through the key features so you can start tracking your overlay-crochet projects right away. Tap <strong>Next</strong> to continue, or <strong>Skip</strong> to jump straight in.' },
+  { icon:'📋', title:'My Projects',
+    body:'<em>My Projects</em> on the home screen is where all your charts live. Create a new project from a <strong>Stitch Fiddle PDF</strong>, a <strong>photo</strong>, or build one from scratch. Each project tracks its own position.' },
+  { icon:'📊', title:'The Chart Tracker',
+    body:'Inside a project the <em>Tracker</em> shows your chart — Color A/B rows and <strong>X marks</strong> for double-crochet stitches. Use <strong>+/−</strong> to advance rows and stitches. Tap <em>10</em> to zoom into your current stitch group.' },
+  { icon:'📄', title:'Import from PDF',
+    body:'Got a <strong>Stitch Fiddle</strong> chart? Open <em>New Project → PDF tab</em> and import it. The app reads the pattern automatically — row and stitch counts fill in on their own.' },
+  { icon:'🖼️', title:'Design from Photo',
+    body:'Tap <em>Design from Photo</em> on the home screen to turn any image into a two-color mosaic chart. Adjust the <strong>threshold</strong> slider to control which cells become your overlay colour.' },
+  { icon:'🧵', title:'Yarn Stash',
+    body:'Use the <em>Yarn Stash</em> to log your yarn colours, brands and amounts. Tap a colour swatch to open the <strong>colour wheel</strong> and save your shades for quick re-use.' },
+  { icon:'⚙️', title:'Settings & Sharing',
+    body:'In <em>Settings</em> you can change the <strong>colour scheme</strong>, text size, font and accent colour. Use <em>Share Chart</em> on any project to generate a code friends can import into their own app.' },
+  { icon:'✅', title:"You're all set!",
+    body:'Happy crocheting! 🎉<br><br>You can replay this tour any time from <em>Settings → Replay Tutorial</em>, or from the <em>?</em> button next to Settings.' },
+];
+let _tutStep = 0;
+function _renderTut() {
+  const s = TUTORIAL_STEPS[_tutStep];
+  document.getElementById('tutorial-icon').textContent = s.icon;
+  document.getElementById('tutorial-title').textContent = s.title;
+  document.getElementById('tutorial-body').innerHTML = s.body;
+  const dots = document.getElementById('tutorial-dots');
+  dots.innerHTML = '';
+  TUTORIAL_STEPS.forEach((_,i) => {
+    const d = document.createElement('span');
+    d.className = 't-dot'+(i===_tutStep?' active':'');
+    dots.appendChild(d);
+  });
+  document.getElementById('btn-tutorial-prev').style.visibility = _tutStep===0?'hidden':'visible';
+  const last = _tutStep===TUTORIAL_STEPS.length-1;
+  document.getElementById('btn-tutorial-next').textContent = last ? 'Get Started ✓' : 'Next →';
+  document.getElementById('btn-tutorial-skip').style.display = last ? 'none' : '';
+}
+function openTutorial() {
+  _tutStep = 0; _renderTut();
+  document.getElementById('tutorial-overlay').classList.add('open');
+}
+function closeTutorial() {
+  document.getElementById('tutorial-overlay').classList.remove('open');
+  store.set('mc_tutorial_done','1');
+}
+// NOTE: event listeners for the text-size buttons, btn-settings, and the
+// tutorial overlay's own buttons are wired in the main script below (after
+// </head>), not here — this script block runs while the browser is still
+// parsing <head>, before any of that markup exists in the DOM yet, so
+// document.getElementById(...) for any of them would return null here.
+
 </script>
 </head>
 <body>
@@ -389,6 +560,7 @@
 <div id="nav">
   <button id="nav-back">&#8592;</button>
   <h1>🧶 Mosaic Tracker</h1>
+  <button id="btn-help" title="Help / Tutorial">?</button>
   <button id="btn-settings" title="Settings">⚙️</button>
 </div>
 
@@ -617,6 +789,27 @@
       <button type="button" class="btn-small" id="btn-theme-reset">Reset</button>
     </div>
     <div class="hint">Changes the app's highlight color used for buttons, the current row, and progress indicators.</div>
+  </div>
+
+  <p class="section-title">Color Scheme</p>
+  <div class="form-group"><div class="scheme-grid" id="scheme-grid"></div></div>
+
+  <p class="section-title">Text Size</p>
+  <div class="form-group">
+    <div class="seg-ctrl" id="text-size-ctrl">
+      <button data-size="14">Small</button>
+      <button data-size="16">Medium</button>
+      <button data-size="18">Large</button>
+    </div>
+  </div>
+
+  <p class="section-title">Font</p>
+  <div class="form-group"><div class="font-grid" id="font-grid"></div></div>
+
+  <p class="section-title">Tutorial</p>
+  <div class="form-group">
+    <button class="btn-secondary" id="btn-replay-tutorial">▶ Replay Tutorial</button>
+    <div class="hint" style="margin-top:8px;">Walk through the app features again, step by step.</div>
   </div>
 
   <p class="section-title">Backup &amp; Restore</p>
@@ -932,6 +1125,20 @@
 
 <div id="toast"></div>
 
+<div id="tutorial-overlay">
+  <div id="tutorial-card">
+    <div id="tutorial-dots"></div>
+    <div id="tutorial-icon"></div>
+    <div id="tutorial-title"></div>
+    <div id="tutorial-body"></div>
+    <div id="tutorial-actions">
+      <button id="btn-tutorial-skip">Skip</button>
+      <button id="btn-tutorial-prev">← Back</button>
+      <button id="btn-tutorial-next">Next →</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Load pdf.js from the locally-bundled copy first (works fully offline,
 // which is the whole point on a phone with no signal) and only reach out
@@ -1010,6 +1217,9 @@ async function loadSettings() {
     try { settings = Object.assign(settings, JSON.parse(raw)); } catch {}
   }
   applyAccentColor(settings.accentColor || DEFAULT_ACCENT);
+  if (settings.colorScheme) applyScheme(settings.colorScheme);
+  if (settings.fontId)      applyFontFamily(settings.fontId);
+  if (settings.textSize)    applyTextSize(settings.textSize);
 }
 async function saveSettings() { await store.set('mc_settings', JSON.stringify(settings)); }
 
@@ -1101,6 +1311,7 @@ function showScreen(id) {
   document.getElementById('screen-' + id).classList.add('active');
   document.getElementById('nav-back').style.display = id === 'home' ? 'none' : 'block';
   document.getElementById('btn-settings').style.display = (id === 'home' || id === 'list') ? 'block' : 'none';
+  document.getElementById('btn-help').style.display = (id === 'home' || id === 'list') ? 'block' : 'none';
   if (id === 'tracker') startSession();
 
   if (!suppressHistoryOnShowScreen) {
@@ -1517,6 +1728,9 @@ document.getElementById('backup-file-input').addEventListener('change', async e 
     await saveYarnStash();
     await saveSettings();
     applyAccentColor(settings.accentColor || DEFAULT_ACCENT);
+  if (settings.colorScheme) applyScheme(settings.colorScheme);
+  if (settings.fontId)      applyFontFamily(settings.fontId);
+  if (settings.textSize)    applyTextSize(settings.textSize);
     status.textContent = `Restored ${replace ? '(replaced)' : '(merged)'} — ${projects.length} project(s) total.`;
     toast('Backup restored');
   } catch (err) {
@@ -3597,6 +3811,7 @@ document.getElementById('btn-edit-project').addEventListener('click', () => open
 
 // ── SETTINGS SCREEN ──────────────────────────────────────────────────────
 document.getElementById('btn-settings').addEventListener('click', () => {
+  buildSchemeGrid(); buildFontGrid(); syncTextSizeCtrl();
   document.getElementById('s-windowed-view').checked = !!settings.windowedView;
   document.getElementById('s-window-size').value = settings.windowSize || STITCH_WINDOW;
   showScreen('settings');
@@ -3612,6 +3827,28 @@ document.getElementById('s-window-size').addEventListener('change', e => {
   e.target.value = settings.windowSize;
   saveSettings();
 });
+document.querySelectorAll('#text-size-ctrl button').forEach(b => {
+  b.addEventListener('click', () => {
+    applyTextSize(+b.dataset.size); saveSettings();
+    document.querySelectorAll('#text-size-ctrl button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// ── TUTORIAL — button wiring ─────────────────────────────────────────────
+// (TUTORIAL_STEPS / openTutorial / closeTutorial / _renderTut are defined
+// in the <head> script; only the actual button bindings live here, since
+// this runs after the tutorial overlay markup at the end of <body> exists.)
+document.getElementById('btn-tutorial-next').addEventListener('click', () => {
+  if (_tutStep < TUTORIAL_STEPS.length-1) { _tutStep++; _renderTut(); }
+  else closeTutorial();
+});
+document.getElementById('btn-tutorial-prev').addEventListener('click', () => {
+  if (_tutStep > 0) { _tutStep--; _renderTut(); }
+});
+document.getElementById('btn-tutorial-skip').addEventListener('click', closeTutorial);
+document.getElementById('btn-replay-tutorial').addEventListener('click', openTutorial);
+document.getElementById('btn-help').addEventListener('click', openTutorial);
 
 // ── BACK NAV ─────────────────────────────────────────────────────────────
 // The single source of truth for "what does one step back do" — shared by
@@ -3921,6 +4158,8 @@ const _origOpenProjectFn = window.openProject;
   await loadYarnStash();
   syncWindowViewUI();
   renderList();
+  const _td = await store.get('mc_tutorial_done');
+  if (!_td) openTutorial();
 })();
 
 // ── SAVE ON APP CLOSE / BACKGROUND ──────────────────────────────────────
@@ -3949,5 +4188,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', saveAllSync);
 
 </script>
+
 </body>
 </html>
